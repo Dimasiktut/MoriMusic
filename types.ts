@@ -1,3 +1,4 @@
+
 export interface User {
   id: number; // Telegram ID is number (bigint)
   username: string;
@@ -7,6 +8,7 @@ export interface User {
   headerUrl?: string; // Background banner for profile
   bio?: string;
   links: {
+    telegram?: string; // Artist Channel
     yandex?: string;
     spotify?: string;
     soundcloud?: string;
@@ -17,6 +19,7 @@ export interface User {
     likesReceived: number;
     totalPlays: number;
   };
+  badges?: string[]; // 'creator', 'meloman', 'star', 'verified'
   isVerified?: boolean;
 }
 

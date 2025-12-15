@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment, Playlist } from '../types';
 import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TRANSLATIONS, Language } from '../constants';
@@ -66,6 +67,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const t = useCallback((key: keyof typeof TRANSLATIONS['en']) => {
     return TRANSLATIONS[language][key] || key;
   }, [language]);
+
+  // --- BADGE CALCULATION LOGIC ---
+  const calculateBadges = (stats: { uploads: number, likesReceived: number, totalPlays: number }, isVerified?: boolean) => {
+      const badges: string[] = [];
+      if (isVerified) badges.push('verified');
+      if (stats.uploads > 0) badges.push('creator');
+      if (stats.likesReceived > 10) badges.push('star');
+      if (stats.totalPlays > 50) badges.push('meloman'); 
+      return badges;
+  };
 
   // Helper to map DB track to UI Track
   const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
@@ -307,6 +318,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
 
           if (profile) {
+            const stats = { uploads: 0, likesReceived: 0, totalPlays: 0 };
             setCurrentUser({
               id: profile.id,
               username: profile.username,
@@ -316,7 +328,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               headerUrl: profile.header_url, 
               bio: profile.bio,
               links: profile.links || {},
-              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
+              stats: stats,
+              badges: calculateBadges(stats, profile.isVerified)
             });
             const playlists = await fetchUserPlaylists(userId);
             setMyPlaylists(playlists);
@@ -590,6 +603,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        if (!data) return null;
        
        const { count: uploads } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
+       const stats = { uploads: uploads || 0, likesReceived: 0, totalPlays: 0 };
        
        return {
            id: data.id,
@@ -600,7 +614,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
            headerUrl: data.header_url,
            bio: data.bio,
            links: data.links || {},
-           stats: { uploads: uploads || 0, likesReceived: 0, totalPlays: 0 }
+           stats: stats,
+           badges: calculateBadges(stats, data.isVerified)
        };
   }, []);
 

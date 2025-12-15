@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark } from '../components/ui/Icons';
+import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, Zap, TrendingUp, Send } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
@@ -110,6 +111,16 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
       setPlaylistTracks([]);
   };
 
+  const getBadgeIcon = (badge: string) => {
+      switch(badge) {
+          case 'verified': return <BadgeCheck size={16} className="text-blue-500 fill-blue-500/10" />;
+          case 'creator': return <div className="p-0.5 bg-violet-500/10 rounded-full border border-violet-500/30"><Mic size={12} className="text-violet-400" /></div>;
+          case 'meloman': return <div className="p-0.5 bg-pink-500/10 rounded-full border border-pink-500/30"><Headphones size={12} className="text-pink-400" /></div>;
+          case 'star': return <div className="p-0.5 bg-yellow-500/10 rounded-full border border-yellow-500/30"><Zap size={12} className="text-yellow-400" /></div>;
+          default: return null;
+      }
+  };
+
   if (loadingProfile) return <div className="p-4 pt-10"><TrackSkeleton /><TrackSkeleton /></div>;
   if (!profileUser) return <div className="p-10 text-center text-zinc-500">{t('profile_not_found')}</div>;
 
@@ -117,6 +128,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
 
   const getLinkLabel = (key: string, url: string) => {
+    if (key === 'telegram') return 'Channel';
     if (key === 'spotify') return t('link_spotify');
     if (key === 'soundcloud') return t('link_soundcloud');
     if (key === 'yandex') return t('link_yandex');
@@ -259,7 +271,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
 
        <div className="px-4 -mt-16 relative z-10">
            <div className="flex flex-col items-center">
-               <div className="w-32 h-32 rounded-full border-4 border-black overflow-hidden bg-zinc-800 shadow-xl">
+               <div className="w-32 h-32 rounded-full border-4 border-black overflow-hidden bg-zinc-800 shadow-xl relative">
                    {profileUser.photoUrl ? (
                        <img src={profileUser.photoUrl} alt="avatar" className="w-full h-full object-cover" />
                    ) : (
@@ -267,37 +279,84 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    )}
                </div>
                
-               <div className="flex items-center gap-1 mt-3">
+               <div className="flex items-center gap-2 mt-3">
                    <h2 className="text-xl font-bold text-white">@{profileUser.username}</h2>
-                   {profileUser.isVerified && <BadgeCheck size={18} className="text-violet-500 fill-violet-500/10" />}
+                   {profileUser.badges && profileUser.badges.length > 0 && (
+                       <div className="flex gap-1">
+                           {profileUser.badges.map(b => <span key={b}>{getBadgeIcon(b)}</span>)}
+                       </div>
+                   )}
                </div>
+               
                {profileUser.firstName && <span className="text-sm text-zinc-400">{profileUser.firstName} {profileUser.lastName}</span>}
+               
                <p className="text-center text-zinc-300 text-sm mt-3 max-w-xs whitespace-pre-wrap">
                    {profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}
                </p>
 
-               <div className="flex gap-8 mt-6 w-full justify-center pb-6 border-b border-zinc-800">
-                   <div className="text-center">
-                       <div className="text-lg font-bold text-white">{userTracks.length}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_tracks')}</div>
+               {/* Creator Hub for Owner */}
+               {isOwnProfile && profileUser.stats.uploads > 0 && (
+                   <div className="w-full mt-6 bg-zinc-900/80 border border-violet-500/20 rounded-xl p-4">
+                       <div className="flex items-center gap-2 mb-3 text-violet-400 font-semibold text-xs uppercase tracking-wide">
+                           <TrendingUp size={14} /> Creator Hub
+                       </div>
+                       <div className="flex justify-between items-center text-center">
+                            <div>
+                                <div className="text-2xl font-bold text-white">{profileUser.stats.totalPlays.toLocaleString()}</div>
+                                <div className="text-[10px] text-zinc-500 uppercase">Total Plays</div>
+                            </div>
+                            <div className="h-8 w-[1px] bg-zinc-800"></div>
+                            <div>
+                                <div className="text-2xl font-bold text-white">{profileUser.stats.likesReceived}</div>
+                                <div className="text-[10px] text-zinc-500 uppercase">Total Likes</div>
+                            </div>
+                            <div className="h-8 w-[1px] bg-zinc-800"></div>
+                            <div>
+                                <div className="text-2xl font-bold text-white">{profileUser.stats.uploads}</div>
+                                <div className="text-[10px] text-zinc-500 uppercase">Uploads</div>
+                            </div>
+                       </div>
                    </div>
-                   <div className="text-center">
-                       <div className="text-lg font-bold text-white">{profileUser.stats.likesReceived}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_likes')}</div>
+               )}
+
+               {/* Gate-to-Stream / Subscribe Button */}
+               {profileUser.links.telegram && !isOwnProfile && (
+                   <a 
+                     href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram.replace('@', '')}`}
+                     target="_blank"
+                     rel="noopener noreferrer"
+                     className="mt-4 px-6 py-2.5 bg-[#2AABEE] text-white rounded-full font-bold text-sm shadow-lg shadow-blue-500/20 hover:scale-105 transition-transform flex items-center gap-2"
+                   >
+                       <Send size={16} /> Subscribe to Channel
+                   </a>
+               )}
+
+               {/* Standard Stats (Hidden if Creator Hub shown for owner, or shown for visitor) */}
+               {(!isOwnProfile || profileUser.stats.uploads === 0) && (
+                   <div className="flex gap-8 mt-6 w-full justify-center pb-6 border-b border-zinc-800">
+                       <div className="text-center">
+                           <div className="text-lg font-bold text-white">{userTracks.length}</div>
+                           <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_tracks')}</div>
+                       </div>
+                       <div className="text-center">
+                           <div className="text-lg font-bold text-white">{profileUser.stats.likesReceived}</div>
+                           <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_likes')}</div>
+                       </div>
+                       <div className="text-center">
+                           <div className="text-lg font-bold text-white">{profileUser.stats.totalPlays.toLocaleString()}</div>
+                           <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_plays')}</div>
+                       </div>
                    </div>
-                   <div className="text-center">
-                       <div className="text-lg font-bold text-white">{profileUser.stats.totalPlays.toLocaleString()}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_plays')}</div>
-                   </div>
-               </div>
+               )}
 
                <div className="flex flex-wrap gap-3 mt-6 justify-center">
                    {Object.entries(profileUser.links).map(([key, url]) => {
-                       if (!url) return null;
+                       if (!url || key === 'telegram') return null; // Telegram handled above
+                       const linkUrl = url as string;
                        return (
-                           <a key={key} href={url} target="_blank" rel="noopener noreferrer" 
+                           <a key={key} href={linkUrl} target="_blank" rel="noopener noreferrer" 
                              className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-300 hover:text-white hover:border-violet-500/50 transition-all text-xs font-medium flex items-center gap-2">
-                               <ExternalLink size={14} />{getLinkLabel(key, url)}
+                               <ExternalLink size={14} />{getLinkLabel(key, linkUrl)}
                            </a>
                        );
                    })}

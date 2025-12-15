@@ -1,3 +1,4 @@
+
 import { 
   Home, 
   BarChart2, 
@@ -33,7 +34,12 @@ import {
   Layers,
   Plus,
   Download,
-  Bookmark
+  Bookmark,
+  Mic,
+  Headphones,
+  Zap,
+  TrendingUp,
+  Send
 } from 'lucide-react';
 
 export {
@@ -71,5 +77,10 @@ export {
   Layers,
   Plus,
   Download,
-  Bookmark
+  Bookmark,
+  Mic,
+  Headphones,
+  Zap,
+  TrendingUp,
+  Send
 };

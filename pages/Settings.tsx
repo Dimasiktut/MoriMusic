@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { ArrowLeft, Camera, Save, Globe, Loader2, Image as ImageIcon } from '../components/ui/Icons';
+import { ArrowLeft, Camera, Save, Globe, Loader2, Image as ImageIcon, Send } from '../components/ui/Icons';
 import { User } from '../types';
 
 interface SettingsProps {
@@ -17,6 +18,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
   const [lastName, setLastName] = useState('');
   const [bio, setBio] = useState('');
   const [links, setLinks] = useState<User['links']>({
+    telegram: '',
     yandex: '',
     spotify: '',
     soundcloud: '',
@@ -41,6 +43,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
       setLastName(currentUser.lastName || '');
       setBio(currentUser.bio || '');
       setLinks({
+        telegram: currentUser.links?.telegram || '',
         yandex: currentUser.links?.yandex || '',
         spotify: currentUser.links?.spotify || '',
         soundcloud: currentUser.links?.soundcloud || '',
@@ -248,6 +251,19 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
             <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">{t('settings_socials')}</h3>
             
             <div className="space-y-3">
+              <div className="relative">
+                <div className="absolute left-3 top-3 text-blue-400 pointer-events-none">
+                  <Send size={18} />
+                </div>
+                <input 
+                  type="text"
+                  value={links.telegram || ''}
+                  onChange={e => setLinks({...links, telegram: e.target.value})}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 pl-10 text-white text-sm focus:ring-1 focus:ring-violet-500 outline-none placeholder:text-zinc-700 transition-all"
+                  placeholder="@your_channel_link"
+                />
+              </div>
+
               <div className="relative">
                 <div className="absolute left-3 top-3 text-zinc-500 pointer-events-none">
                   <Globe size={18} />
