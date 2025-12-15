@@ -77,7 +77,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return Promise.all(rawTracks.map(async (t: any) => {
          let comments: Comment[] = [];
          let likesCount = 0;
-         let uploaderStats = { uploads: 0, totalPlays: 0 }; // simplified for list view
 
          try {
              const { data: commentsData } = await supabase

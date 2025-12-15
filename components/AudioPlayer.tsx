@@ -16,7 +16,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
   
   // State for counting plays
   const [hasCountedListen, setHasCountedListen] = useState(false);
@@ -48,7 +47,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
       const current = audioRef.current.currentTime;
       const total = audioRef.current.duration;
       setProgress((current / total) * 100);
-      setDuration(total);
 
       // --- LISTEN COUNTING LOGIC ---
       if (!hasCountedListen && total > 0 && track) {
@@ -61,13 +59,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
           }
       }
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
   if (!track) return null;
@@ -124,10 +115,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
                  <div className={`w-1 bg-violet-500/80 rounded-t-sm ${isPlaying ? 'animate-music-bar-3' : 'h-[60%]'}`}></div>
                  <div className={`w-1 bg-violet-500/80 rounded-t-sm ${isPlaying ? 'animate-music-bar-4' : 'h-[30%]'}`}></div>
              </div>
-
-             {/* <span className="text-xs text-zinc-500 font-mono hidden sm:block">
-                 {formatTime(audioRef.current?.currentTime || 0)}
-             </span> */}
              
              <button 
                 onClick={togglePlay}
