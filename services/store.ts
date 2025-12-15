@@ -293,7 +293,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const data = await response.json();
         return data.ok && ['creator', 'administrator', 'member', 'restricted'].includes(data.result.status);
     } catch {
-        return false;
+        // Fail open: if check fails (proxy down, etc), allow access to not block user
+        console.warn("Membership check failed, allowing access.");
+        return true;
     }
   };
 
@@ -347,7 +349,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             genre: data.genre,
             audio_url: audioUrl,
             cover_url: coverUrl,
-            duration: data.duration
+            duration: Math.round(data.duration) // Round duration to integer
         });
 
         await fetchTracks(currentUser.id);
@@ -401,7 +403,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 genre: commonData.genre,
                 audio_url: audioUrl,
                 cover_url: commonCoverUrl || 'https://picsum.photos/400/400?random=default',
-                duration: duration || 180
+                duration: Math.round(duration || 180) // Round duration to integer
             });
         }
         
