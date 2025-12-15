@@ -376,6 +376,21 @@ OPTION B (Easier):
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
+        // Fetch track details first to get file URLs for storage cleanup
+        const { data: trackToDelete } = await supabase
+            .from('tracks')
+            .select('audio_url, cover_url')
+            .eq('id', trackId)
+            .single();
+
+        // 1. Manually delete dependencies (Comments & Likes) to prevent Foreign Key errors
+        // Note: Promise.all allows these to happen in parallel
+        await Promise.all([
+            supabase.from('comments').delete().eq('track_id', trackId),
+            supabase.from('track_likes').delete().eq('track_id', trackId)
+        ]);
+
+        // 2. Delete the track record from Database
         const { error } = await supabase
             .from('tracks')
             .delete()
@@ -383,10 +398,34 @@ OPTION B (Easier):
 
         if (error) throw error;
 
+        // 3. Update UI immediately
         setTracks(prev => prev.filter(t => t.id !== trackId));
-    } catch (e) {
+
+        // 4. Cleanup Storage (Best effort, runs in background)
+        if (trackToDelete) {
+            const getPath = (url: string) => {
+                if (!url) return null;
+                // Extracts path from .../music/folder/filename
+                const parts = url.split('/music/'); 
+                if (parts.length === 2) return parts[1];
+                return null;
+            };
+
+            const filesToRemove = [
+                getPath(trackToDelete.audio_url),
+                getPath(trackToDelete.cover_url)
+            ].filter(p => p !== null && !p.includes('picsum.photos')) as string[];
+
+            if (filesToRemove.length > 0) {
+                supabase.storage.from('music').remove(filesToRemove).catch(err => {
+                    console.warn("Background storage cleanup failed (non-critical):", err);
+                });
+            }
+        }
+
+    } catch (e: any) {
         console.error("Error deleting track", e);
-        alert("Failed to delete track.");
+        alert(`Failed to delete track: ${e.message || "Unknown error"}`);
     }
   }, []);
 
