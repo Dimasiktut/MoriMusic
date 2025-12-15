@@ -81,7 +81,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          let likesCount = 0;
 
          try {
-             // Fetch simplified comments
              const { data: commentsData } = await supabase
                 .from('comments')
                 .select('*')
@@ -90,7 +89,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 .limit(3);
              if (commentsData) comments = commentsData;
 
-             // Fetch simplified likes
              const { count } = await supabase
                 .from('track_likes')
                 .select('*', { count: 'exact', head: true })
@@ -170,7 +168,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const fetchPlaylistTracks = useCallback(async (playlistId: string): Promise<Track[]> => {
       try {
-          // Join playlist_items with tracks and profiles
           const { data, error } = await supabase
             .from('playlist_items')
             .select(`
@@ -188,7 +185,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (error) throw error;
           
-          // Extract the track objects from the join
           // @ts-ignore
           const rawTracks = data.map(item => item.tracks).filter(Boolean);
           
@@ -209,7 +205,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           if(error) throw error;
           
-          // Refresh local playlists
           const updated = await fetchUserPlaylists(currentUser.id);
           setMyPlaylists(updated);
       } catch (e) {
@@ -225,7 +220,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               playlist_id: playlistId,
               track_id: trackId
           });
-          if (error && error.code !== '23505') { // Ignore unique violation
+          if (error && error.code !== '23505') { 
                throw error;
           }
       } catch (e) {
@@ -233,7 +228,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   }, [currentUser]);
 
-  // Initial App Load
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -262,11 +256,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               links: profile.links || {},
               stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
             });
-            // Load playlists if user exists
             const playlists = await fetchUserPlaylists(userId);
             setMyPlaylists(playlists);
           } else {
-             // Fallback or registration (simplified)
              setCurrentUser({
                 ...INITIAL_USER,
                 id: userId,
@@ -314,9 +306,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // --- INTERNAL UPLOAD HELPERS ---
   const _uploadFileToStorage = async (file: File, folder: string): Promise<string> => {
-      // Generate a clean safe filename with timestamp and random string to avoid collision and encoding issues
+      // Generate a clean safe filename
       const fileExt = file.name.split('.').pop() || 'bin';
-      const safeName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      const randomId = Math.random().toString(36).substring(2, 9);
+      const safeName = `${Date.now()}_${randomId}.${fileExt}`;
       const filePath = `${folder}/${safeName}`;
       
       const { error } = await supabase.storage.from('music').upload(filePath, file, { upsert: true });
@@ -357,7 +350,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             duration: data.duration
         });
 
-        await fetchTracks(currentUser.id); // Refresh feed
+        await fetchTracks(currentUser.id);
     } catch (e: any) {
         console.error("Upload failed", e);
         alert(`Upload error: ${e.message}`);
@@ -370,7 +363,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentUser) return;
     setIsLoading(true);
     
-    // Check membership
     const isMember = await checkGroupMembership(currentUser.id);
     if (!isMember) {
         alert(t('upload_access_denied'));
@@ -379,18 +371,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-        // 1. Upload Common Cover Once
         let commonCoverUrl: string | undefined = undefined;
         if (commonData.coverFile) {
              commonCoverUrl = await _uploadFileToStorage(commonData.coverFile, `covers/${currentUser.id}`);
         }
 
-        // 2. Loop Files
         for (const file of files) {
-             // Calculate Duration (best effort)
              let duration = 0;
              try {
-                // Use a simpler approach or default if fails
                 const audio = new Audio(URL.createObjectURL(file));
                 await new Promise(resolve => {
                     audio.onloadedmetadata = () => {
@@ -398,17 +386,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         resolve(true);
                     };
                     audio.onerror = () => resolve(true);
-                    // Timeout safety
                     setTimeout(() => resolve(true), 1000); 
                 });
              } catch(err) { console.warn("Duration calc failed", err); }
 
-            const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension for title
+            const title = file.name.replace(/\.[^/.]+$/, "");
             
-            // Upload Audio
             const audioUrl = await _uploadFileToStorage(file, `audio/${currentUser.id}`);
 
-            // Insert
             await _insertTrackToDb({
                 uploader_id: currentUser.id,
                 title,
@@ -431,7 +416,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
-        // Cleaning up related data
         await Promise.all([
              supabase.from('comments').delete().eq('track_id', trackId),
              supabase.from('track_likes').delete().eq('track_id', trackId),
@@ -450,7 +434,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleLike = useCallback(async (trackId: string) => {
       if (!currentUser) return;
-      // Optimistic update
       setTracks(prev => prev.map(t => {
         if (t.id === trackId) {
           const isLiked = !t.isLikedByCurrentUser;
@@ -588,4 +571,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useStore = () => {
   const context = useContext(StoreContext);
-  if (!context) throw new Error("useStore
+  if (!context) throw new Error("useStore must be used within StoreProvider");
+  return context;
+};
