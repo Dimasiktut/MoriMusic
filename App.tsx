@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StoreProvider } from './services/store';
+import React, { useState, useEffect } from 'react';
+import { StoreProvider, useStore } from './services/store';
 import { TabView, Track } from './types';
 import Feed from './pages/Feed';
 import Charts from './pages/Charts';
@@ -40,12 +40,38 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
 };
 
 const MainLayout: React.FC = () => {
+  const { tracks } = useStore(); // Access store to find deep linked track
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   
   // Navigation State
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
+  
+  // Logic to handle Deep Links (startapp param)
+  useEffect(() => {
+    if (tracks.length > 0 && !currentTrack) {
+        // 1. Check Telegram Start Param
+        // @ts-ignore
+        const tgParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        
+        // 2. Check Web URL Param (fallback for dev or direct links)
+        const urlParams = new URLSearchParams(window.location.search);
+        const webParam = urlParams.get('startapp');
+
+        const startParam = tgParam || webParam;
+
+        if (startParam && startParam.startsWith('track_')) {
+            const trackId = startParam.replace('track_', '');
+            const found = tracks.find(t => t.id === trackId);
+            if (found) {
+                setCurrentTrack(found);
+                // Optional: Clear param so it doesn't replay on refresh logic if needed, 
+                // but for React SPA it's fine.
+            }
+        }
+    }
+  }, [tracks]); // Run when tracks are loaded
 
   const handlePlayTrack = (track: Track) => {
     setCurrentTrack(track);

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2 } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link } from './ui/Icons';
 import { useStore } from '../services/store';
+import { TELEGRAM_APP_LINK } from '../constants';
 
 interface TrackCardProps {
   track: Track;
@@ -14,6 +15,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showMenu, setShowMenu] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,6 +45,27 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     if (confirm("Are you sure you want to delete this track? This cannot be undone.")) {
         await deleteTrack(track.id);
     }
+    setShowMenu(false);
+  };
+
+  const handleShare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Generate Deep Link: https://t.me/botname/appname?startapp=track_UUID
+    const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
+    
+    navigator.clipboard.writeText(deepLink).then(() => {
+        setIsCopied(true);
+        // Haptic feedback if available
+        // @ts-ignore
+        if (window.Telegram?.WebApp?.HapticFeedback) {
+            // @ts-ignore
+            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+        }
+        
+        setTimeout(() => setIsCopied(false), 2000);
+    });
+    
     setShowMenu(false);
   };
 
@@ -91,9 +114,13 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                     
                     {/* Dropdown Menu */}
                     {showMenu && (
-                        <div className="absolute right-0 top-6 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-10 w-32 animate-in fade-in zoom-in-95 duration-100">
-                             <button className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
-                                <Share2 size={12} /> Share
+                        <div className="absolute right-0 top-6 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-10 w-36 animate-in fade-in zoom-in-95 duration-100">
+                             <button 
+                                onClick={handleShare}
+                                className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
+                             >
+                                {isCopied ? <Check size={12} className="text-green-500"/> : <Link size={12} />}
+                                {isCopied ? "Copied!" : "Copy Link"}
                              </button>
                              {isOwner && (
                                 <button 
@@ -138,8 +165,11 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 <span>{track.comments?.length || 0}</span>
             </button>
             
-             <button className="text-zinc-400 hover:text-white transition-colors">
-                <Share2 size={18} />
+             <button 
+                onClick={handleShare}
+                className={`text-zinc-400 hover:text-white transition-colors ${isCopied ? 'text-green-500' : ''}`}
+             >
+                {isCopied ? <Check size={18} /> : <Share2 size={18} />}
             </button>
         </div>
         

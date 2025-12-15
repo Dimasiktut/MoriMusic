@@ -30,3 +30,7 @@ export const TELEGRAM_CHAT_ID = '@clan_mori';
 
 // Ссылка, которая откроется, если пользователь не подписан
 export const TELEGRAM_GROUP_LINK = 'https://t.me/clan_mori';
+
+// Ссылка на ваше Mini App для генерации Deep Links
+// Формат: https://t.me/<BOT_USERNAME>/<APP_NAME>
+export const TELEGRAM_APP_LINK = 'https://t.me/morimusics_bot/app';

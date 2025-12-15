@@ -23,7 +23,9 @@ import {
   Search,
   Trash2,
   Loader2,
-  Image
+  Image,
+  Check,
+  Link
 } from 'lucide-react';
 
 export {
@@ -51,5 +53,7 @@ export {
   Search,
   Trash2,
   Loader2,
-  Image
+  Image,
+  Check,
+  Link
 };
