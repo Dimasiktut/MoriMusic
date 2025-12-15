@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment, Playlist } from '../types';
-import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_GROUP_LINK, TRANSLATIONS, Language } from '../constants';
+import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
 
 interface UploadTrackData {
@@ -425,7 +425,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addComment = useCallback(async (trackId: string, text: string) => {
     if (!currentUser) return;
     try {
-        const { data, error } = await supabase.from('comments').insert({
+        const { data } = await supabase.from('comments').insert({
             track_id: trackId,
             user_id: currentUser.id,
             username: currentUser.username,
@@ -488,7 +488,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        };
   }, []);
 
-  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => {
+  const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => {
       // Simplified charts logic - returns top tracks by likes/plays for now
       // In production, this would use the listen_history table aggregation
       try {
