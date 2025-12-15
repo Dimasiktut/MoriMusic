@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useStore } from '../services/store';
-import { UploadCloud, Image as ImageIcon, Music, X } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Music } from 'lucide-react';
 import { GENRES } from '../constants';
 
 interface UploadProps {

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment } from '../types';
-import { INITIAL_USER, MOCK_TRACKS, MOCK_USER_ID } from '../constants';
+import { INITIAL_USER, MOCK_TRACKS } from '../constants';
 
 // Define context shape
 interface StoreContextType {

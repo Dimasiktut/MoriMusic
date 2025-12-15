@@ -89,8 +89,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
           </div>
 
           <div className="flex items-center gap-4">
-             <span className="text-xs text-zinc-500 w-8 text-right font-mono">
-                 {formatTime(audioRef.current?.currentTime || 0)}
+             <span className="text-xs text-zinc-500 font-mono">
+                 {formatTime(audioRef.current?.currentTime || 0)} / {formatTime(duration)}
              </span>
              
              <button 
