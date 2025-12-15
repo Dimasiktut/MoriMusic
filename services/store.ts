@@ -202,25 +202,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
         setIsLoading(true);
+
+        // Sanitize helper
+        const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
+
         // 1. Upload Audio
-        const audioPath = `audio/${currentUser.id}/${Date.now()}_${data.audioFile.name}`;
+        const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
+        const audioPath = `audio/${currentUser.id}/${audioName}`;
+        
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
         
-        if (audioError) throw audioError;
+        if (audioError) throw new Error(`Audio upload failed: ${audioError.message}`);
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
 
         // 2. Upload Cover (if exists)
         let coverUrl = 'https://picsum.photos/400/400?random=default';
         if (data.coverFile) {
-            const coverPath = `covers/${currentUser.id}/${Date.now()}_${data.coverFile.name}`;
+            const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
+            const coverPath = `covers/${currentUser.id}/${coverName}`;
+            
             const { error: coverError } = await supabase.storage
                 .from('music')
                 .upload(coverPath, data.coverFile);
             
-            if (!coverError) {
+            if (coverError) {
+                console.warn("Cover upload failed (using default):", coverError.message);
+            } else {
                 const { data: { publicUrl } } = supabase.storage.from('music').getPublicUrl(coverPath);
                 coverUrl = publicUrl;
             }
@@ -237,14 +247,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             duration: data.duration
         });
 
-        if (dbError) throw dbError;
+        if (dbError) throw new Error(`Database insert failed: ${dbError.message}`);
 
         // Refresh tracks
         await fetchTracks(currentUser.id);
 
-    } catch (e) {
+    } catch (e: any) {
         console.error("Upload failed", e);
-        alert("Upload failed. Check console. (Likely Storage bucket 'music' missing or RLS policy blocking)");
+        // Show the actual error message to help debugging
+        alert(`Upload failed: ${e.message || JSON.stringify(e)}`);
     } finally {
         setIsLoading(false);
     }
