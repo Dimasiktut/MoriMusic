@@ -39,4 +39,4 @@ export const TELEGRAM_GROUP_LINK = 'https://t.me/clan_mori';
 // 4. Введите название и описание
 // 5. Когда спросит "Short Name", введите: app
 // 6. Введите URL вашего Vercel проекта
-export const TELEGRAM_APP_LINK = 'https://t.me/morimusics_bot/app';
+export const TELEGRAM_APP_LINK = 'https://t.me/morimusics_bot';
