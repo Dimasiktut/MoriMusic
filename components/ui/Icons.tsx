@@ -28,7 +28,10 @@ import {
   Link,
   BadgeCheck,
   Activity,
-  Clock
+  Clock,
+  ListMusic,
+  Layers,
+  Plus
 } from 'lucide-react';
 
 export {
@@ -61,5 +64,8 @@ export {
   Link,
   BadgeCheck,
   Activity,
-  Clock
+  Clock,
+  ListMusic,
+  Layers,
+  Plus
 };

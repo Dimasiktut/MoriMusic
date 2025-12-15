@@ -48,6 +48,15 @@ export interface Track {
   isVerifiedUploader?: boolean; // New field for UI
 }
 
+export interface Playlist {
+  id: string;
+  userId: number;
+  title: string;
+  coverUrl?: string;
+  createdAt: string;
+  trackCount?: number; 
+}
+
 export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings';
 
 export type ChartType = 'week' | 'month';

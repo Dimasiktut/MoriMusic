@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock } from '../components/ui/Icons';
-import { Track, User } from '../types';
+import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2 } from '../components/ui/Icons';
+import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
 
@@ -13,20 +13,28 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, createPlaylist, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
   // Tabs State
-  const [activeTab, setActiveTab] = useState<'tracks' | 'likes' | 'history'>('tracks');
+  const [activeTab, setActiveTab] = useState<'tracks' | 'likes' | 'history' | 'playlists'>('tracks');
   
+  // Data States
   const [likedTracks, setLikedTracks] = useState<Track[]>([]);
   const [loadingLikes, setLoadingLikes] = useState(false);
 
   const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
+  
+  // Create Playlist Modal
+  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
+  const [creatingPlaylist, setCreatingPlaylist] = useState(false);
 
-  // 1. Load User
   useEffect(() => {
     const loadUser = async () => {
         if (targetUserId && targetUserId !== currentUser?.id) {
@@ -41,7 +49,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     loadUser();
   }, [targetUserId, currentUser, fetchUserById]);
 
-  // 2. Load Secondary Tab Data
   useEffect(() => {
     const loadData = async () => {
         if (!profileUser) return;
@@ -56,10 +63,28 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
             const history = await getUserHistory(profileUser.id);
             setHistoryTracks(history);
             setLoadingHistory(false);
+        } else if (activeTab === 'playlists') {
+            setLoadingPlaylists(true);
+            const userPlaylists = await fetchUserPlaylists(profileUser.id);
+            setPlaylists(userPlaylists);
+            setLoadingPlaylists(false);
         }
     };
     loadData();
-  }, [activeTab, profileUser, getLikedTracks, getUserHistory]);
+  }, [activeTab, profileUser, getLikedTracks, getUserHistory, fetchUserPlaylists]);
+
+  const handleCreatePlaylist = async () => {
+      if (!newPlaylistTitle.trim()) return;
+      setCreatingPlaylist(true);
+      await createPlaylist(newPlaylistTitle);
+      setNewPlaylistTitle('');
+      setShowCreatePlaylist(false);
+      setCreatingPlaylist(false);
+      if (profileUser) {
+          const updated = await fetchUserPlaylists(profileUser.id);
+          setPlaylists(updated);
+      }
+  };
 
   if (loadingProfile) return <div className="p-4 pt-10"><TrackSkeleton /><TrackSkeleton /></div>;
   if (!profileUser) return <div className="p-10 text-center text-zinc-500">{t('profile_not_found')}</div>;
@@ -67,7 +92,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const isOwnProfile = currentUser?.id === profileUser.id;
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
 
-  // Helper to get nice labels for links
   const getLinkLabel = (key: string, url: string) => {
     if (key === 'spotify') return t('link_spotify');
     if (key === 'soundcloud') return t('link_soundcloud');
@@ -81,17 +105,47 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   };
 
   return (
-    <div className="pb-32 animate-in fade-in slide-in-from-bottom-4 duration-300">
-       {/* Header / Cover */}
+    <div className="pb-32 animate-in fade-in slide-in-from-bottom-4 duration-300 relative">
+       {/* Create Playlist Modal */}
+       {showCreatePlaylist && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+               <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
+                   <h3 className="text-lg font-bold text-white">{t('profile_create_playlist')}</h3>
+                   <input 
+                      type="text" 
+                      autoFocus
+                      value={newPlaylistTitle}
+                      onChange={e => setNewPlaylistTitle(e.target.value)}
+                      placeholder={t('profile_playlist_name')}
+                      className="w-full bg-zinc-800 border-none rounded-xl p-3 text-white focus:ring-2 focus:ring-violet-500 outline-none"
+                   />
+                   <div className="flex gap-3 pt-2">
+                       <button 
+                         onClick={() => setShowCreatePlaylist(false)}
+                         className="flex-1 py-3 text-sm text-zinc-400 font-medium hover:text-white"
+                       >
+                           {t('profile_playlist_cancel')}
+                       </button>
+                       <button 
+                         onClick={handleCreatePlaylist}
+                         disabled={!newPlaylistTitle.trim() || creatingPlaylist}
+                         className="flex-1 py-3 bg-violet-600 rounded-xl text-white font-bold text-sm hover:bg-violet-700 disabled:opacity-50 flex justify-center"
+                       >
+                           {creatingPlaylist ? <Loader2 className="animate-spin" size={16}/> : t('profile_playlist_create_btn')}
+                       </button>
+                   </div>
+               </div>
+           </div>
+       )}
+
+       {/* Header */}
        <div className="h-40 bg-zinc-900 relative overflow-hidden">
            {profileUser.headerUrl ? (
                <img src={profileUser.headerUrl} alt="header" className="w-full h-full object-cover" />
            ) : (
                <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black" />
            )}
-           
            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-
            {onBack && (
                <button 
                  onClick={onBack}
@@ -100,7 +154,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    <ArrowLeft size={20} />
                </button>
            )}
-           
            {isOwnProfile && (
                 <button 
                     onClick={onEditProfile}
@@ -127,14 +180,11 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    <h2 className="text-xl font-bold text-white">@{profileUser.username}</h2>
                    {profileUser.isVerified && <BadgeCheck size={18} className="text-violet-500 fill-violet-500/10" />}
                </div>
-
                {profileUser.firstName && <span className="text-sm text-zinc-400">{profileUser.firstName} {profileUser.lastName}</span>}
-               
                <p className="text-center text-zinc-300 text-sm mt-3 max-w-xs whitespace-pre-wrap">
                    {profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}
                </p>
 
-               {/* Stats */}
                <div className="flex gap-8 mt-6 w-full justify-center pb-6 border-b border-zinc-800">
                    <div className="text-center">
                        <div className="text-lg font-bold text-white">{userTracks.length}</div>
@@ -150,118 +200,91 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    </div>
                </div>
 
-               {/* Social Links */}
                <div className="flex flex-wrap gap-3 mt-6 justify-center">
                    {Object.entries(profileUser.links).map(([key, url]) => {
                        if (!url) return null;
-                       const label = getLinkLabel(key, url);
                        return (
-                           <a 
-                             key={key} 
-                             href={url} 
-                             target="_blank" 
-                             rel="noopener noreferrer" 
-                             className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-300 hover:text-white hover:border-violet-500/50 hover:bg-violet-500/10 transition-all text-xs font-medium flex items-center gap-2"
-                           >
-                               <ExternalLink size={14} />
-                               {label}
+                           <a key={key} href={url} target="_blank" rel="noopener noreferrer" 
+                             className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-zinc-300 hover:text-white hover:border-violet-500/50 transition-all text-xs font-medium flex items-center gap-2">
+                               <ExternalLink size={14} />{getLinkLabel(key, url)}
                            </a>
                        );
                    })}
                </div>
            </div>
 
-           {/* Tabs Switcher */}
            <div className="mt-8 flex border-b border-zinc-800 mb-4 overflow-x-auto no-scrollbar">
-                <button
-                    onClick={() => setActiveTab('tracks')}
-                    className={`flex-1 min-w-[30%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'tracks' ? 'text-violet-400' : 'text-zinc-500'}`}
-                >
-                    <Music size={16} />
-                    {isOwnProfile ? t('profile_my_tracks') : t('profile_tracks')}
+                <button onClick={() => setActiveTab('tracks')} className={`flex-1 min-w-[25%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'tracks' ? 'text-violet-400' : 'text-zinc-500'}`}>
+                    <Music size={16} /> <span className="hidden sm:inline">{isOwnProfile ? t('profile_my_tracks') : t('profile_tracks')}</span>
                     {activeTab === 'tracks' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
                 </button>
-                <button
-                    onClick={() => setActiveTab('likes')}
-                    className={`flex-1 min-w-[30%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'likes' ? 'text-violet-400' : 'text-zinc-500'}`}
-                >
-                    <Heart size={16} />
-                    {t('profile_likes')}
+                <button onClick={() => setActiveTab('playlists')} className={`flex-1 min-w-[25%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'playlists' ? 'text-violet-400' : 'text-zinc-500'}`}>
+                    <ListMusic size={16} /> <span className="hidden sm:inline">{t('profile_playlists')}</span>
+                    {activeTab === 'playlists' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
+                </button>
+                <button onClick={() => setActiveTab('likes')} className={`flex-1 min-w-[25%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'likes' ? 'text-violet-400' : 'text-zinc-500'}`}>
+                    <Heart size={16} /> <span className="hidden sm:inline">{t('profile_likes')}</span>
                     {activeTab === 'likes' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
                 </button>
                  {isOwnProfile && (
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`flex-1 min-w-[30%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'history' ? 'text-violet-400' : 'text-zinc-500'}`}
-                    >
-                        <Clock size={16} />
-                        {t('profile_history')}
+                    <button onClick={() => setActiveTab('history')} className={`flex-1 min-w-[25%] pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'history' ? 'text-violet-400' : 'text-zinc-500'}`}>
+                        <Clock size={16} /> <span className="hidden sm:inline">{t('profile_history')}</span>
                         {activeTab === 'history' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
                     </button>
                  )}
            </div>
 
-           {/* Content */}
            <div className="space-y-2">
                {activeTab === 'tracks' && (
                    userTracks.length > 0 ? (
                        userTracks.map(track => (
-                           <TrackCard 
-                                key={track.id} 
-                                track={track} 
-                                onPlay={onPlayTrack}
-                                onOpenProfile={isOwnProfile ? undefined : undefined} 
-                           />
+                           <TrackCard key={track.id} track={track} onPlay={onPlayTrack} onOpenProfile={isOwnProfile ? undefined : undefined} />
                        ))
                    ) : (
-                       <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
-                           <p className="text-zinc-500 text-sm">{t('profile_no_tracks')}</p>
-                       </div>
+                       <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">{t('profile_no_tracks')}</p></div>
                    )
+               )}
+
+               {activeTab === 'playlists' && (
+                    <div>
+                        {isOwnProfile && (
+                            <button onClick={() => setShowCreatePlaylist(true)} className="w-full mb-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 border-dashed rounded-xl text-zinc-400 hover:text-white transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+                                <Plus size={18} />{t('profile_create_playlist')}
+                            </button>
+                        )}
+                        {loadingPlaylists ? (
+                            <div className="space-y-3"><div className="h-16 bg-zinc-900 rounded-xl animate-pulse" /></div>
+                        ) : playlists.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-3">
+                                {playlists.map(p => (
+                                    <div key={p.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors">
+                                        <div className="aspect-square bg-zinc-800 relative">
+                                            {p.coverUrl ? (
+                                                <img src={p.coverUrl} className="w-full h-full object-cover" alt={p.title} />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center text-zinc-600"><ListMusic size={32} /></div>
+                                            )}
+                                        </div>
+                                        <div className="p-3"><h4 className="text-white text-sm font-bold truncate">{p.title}</h4></div>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">{t('profile_no_playlists')}</p></div>
+                        )}
+                    </div>
                )}
 
                {activeTab === 'likes' && (
-                   loadingLikes ? (
-                        <>
-                            <TrackSkeleton />
-                            <TrackSkeleton />
-                        </>
-                   ) : likedTracks.length > 0 ? (
-                       likedTracks.map(track => (
-                           <TrackCard 
-                                key={track.id} 
-                                track={track} 
-                                onPlay={onPlayTrack}
-                                onOpenProfile={onBack ? undefined : undefined} 
-                           />
-                       ))
-                   ) : (
-                       <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
-                           <p className="text-zinc-500 text-sm">No liked tracks yet.</p>
-                       </div>
-                   )
+                   loadingLikes ? <TrackSkeleton /> : likedTracks.length > 0 ? likedTracks.map(track => (
+                       <TrackCard key={track.id} track={track} onPlay={onPlayTrack} onOpenProfile={onBack ? undefined : undefined} />
+                   )) : <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">No liked tracks.</p></div>
                )}
 
                {activeTab === 'history' && (
-                    loadingHistory ? (
-                        <>
-                            <TrackSkeleton />
-                            <TrackSkeleton />
-                        </>
-                   ) : historyTracks.length > 0 ? (
-                       historyTracks.map(track => (
-                           <TrackCard 
-                                key={track.id} 
-                                track={track} 
-                                onPlay={onPlayTrack}
-                                onOpenProfile={onBack ? undefined : undefined} 
-                           />
-                       ))
-                   ) : (
-                       <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
-                           <p className="text-zinc-500 text-sm">No listening history yet.</p>
-                       </div>
-                   )
+                    loadingHistory ? <TrackSkeleton /> : historyTracks.length > 0 ? historyTracks.map(track => (
+                       <TrackCard key={track.id} track={track} onPlay={onPlayTrack} onOpenProfile={onBack ? undefined : undefined} />
+                   )) : <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">No history.</p></div>
                )}
            </div>
        </div>
