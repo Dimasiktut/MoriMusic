@@ -17,10 +17,12 @@ interface StoreContextType {
   tracks: Track[];
   isLoading: boolean;
   uploadTrack: (data: UploadTrackData) => Promise<void>;
+  deleteTrack: (trackId: string) => Promise<void>;
   toggleLike: (trackId: string) => Promise<void>;
   addComment: (trackId: string, text: string) => Promise<void>;
   incrementPlay: (trackId: string) => void;
   updateProfile: (updates: Partial<User>) => Promise<void>;
+  fetchUserById: (userId: number) => Promise<User | null>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -372,6 +374,22 @@ OPTION B (Easier):
     }
   }, [currentUser, fetchTracks]);
 
+  const deleteTrack = useCallback(async (trackId: string) => {
+    try {
+        const { error } = await supabase
+            .from('tracks')
+            .delete()
+            .eq('id', trackId);
+
+        if (error) throw error;
+
+        setTracks(prev => prev.filter(t => t.id !== trackId));
+    } catch (e) {
+        console.error("Error deleting track", e);
+        alert("Failed to delete track.");
+    }
+  }, []);
+
   const toggleLike = useCallback(async (trackId: string) => {
     if (!currentUser) return;
 
@@ -431,7 +449,6 @@ OPTION B (Easier):
         }
     } catch (e) {
         console.error("Error adding comment", e);
-        // Removed fake local comment fallback
     }
   }, [currentUser]);
 
@@ -472,6 +489,51 @@ OPTION B (Easier):
     }
   }, [currentUser]);
 
+  const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select(`
+          *,
+          tracks:tracks(count),
+          likesReceived:track_likes(count)
+        `)
+        .eq('id', userId)
+        .single();
+      
+      if (error || !profile) return null;
+
+      // We need to aggregate stats properly
+      // Note: This is a bit simplified. Real apps usually have triggers to update a stats table.
+      // Here we just mock stats from what we get or fetch simple counts.
+      
+      // Get exact play count
+      const { data: tracksData } = await supabase.from('tracks').select('plays').eq('uploader_id', userId);
+      const totalPlays = tracksData?.reduce((acc, curr) => acc + curr.plays, 0) || 0;
+      
+      // Get exact upload count
+      const { count: uploadCount } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
+
+      return {
+          id: profile.id,
+          username: profile.username,
+          firstName: profile.first_name,
+          lastName: profile.last_name,
+          photoUrl: profile.photo_url,
+          bio: profile.bio,
+          links: profile.links || {},
+          stats: {
+              uploads: uploadCount || 0,
+              likesReceived: 0, // Difficult to count effectively without a separate stats table, leaving as 0 for external for now or use what we have
+              totalPlays: totalPlays
+          }
+      };
+    } catch (e) {
+      console.error("Error fetching user profile", e);
+      return null;
+    }
+  }, []);
+
   return React.createElement(
     StoreContext.Provider,
     {
@@ -480,10 +542,12 @@ OPTION B (Easier):
         tracks,
         isLoading,
         uploadTrack,
+        deleteTrack,
         toggleLike,
         addComment,
         incrementPlay,
-        updateProfile
+        updateProfile,
+        fetchUserById
       }
     },
     children

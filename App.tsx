@@ -17,9 +17,6 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
     { id: 'profile', icon: User, label: 'Profile' },
   ];
 
-  // Don't show navigation if we are in settings (optional, but cleaner if settings is a modal-like page)
-  if (activeTab === 'settings') return null;
-
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-zinc-950/90 backdrop-blur-lg border-t border-white/5 pb-safe z-50">
       <div className="flex justify-around items-center h-16">
@@ -45,25 +42,56 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
 const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
+  
+  // Navigation State
+  const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
+  const [viewingUserId, setViewingUserId] = useState<number | null>(null);
 
   const handlePlayTrack = (track: Track) => {
     setCurrentTrack(track);
   };
 
+  const handleOpenProfile = (userId: number) => {
+    setViewingUserId(userId);
+    setOverlayView('user_profile');
+  };
+
+  const handleTabChange = (tab: TabView) => {
+    // Reset overlays when switching main tabs
+    setOverlayView('none');
+    setViewingUserId(null);
+    setActiveTab(tab);
+  };
+
   const renderContent = () => {
+    // Overlays take precedence
+    if (overlayView === 'settings') {
+        return <SettingsPage onBack={() => setOverlayView('none')} />;
+    }
+    
+    if (overlayView === 'user_profile') {
+        return (
+            <Profile 
+                onPlayTrack={handlePlayTrack} 
+                onEditProfile={() => { /* Should not happen if logic is correct, but safe fallback */ }}
+                onBack={() => { setOverlayView('none'); setViewingUserId(null); }}
+                targetUserId={viewingUserId}
+            />
+        );
+    }
+
+    // Main Tabs
     switch (activeTab) {
       case 'feed':
-        return <Feed onPlayTrack={handlePlayTrack} />;
+        return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       case 'charts':
-        return <Charts onPlayTrack={handlePlayTrack} />;
+        return <Charts onPlayTrack={handlePlayTrack} />; // Charts needs onOpenProfile too? Ideally yes, but keeping props simple for now or Charts tracks need update
       case 'upload':
-        return <Upload onUploadSuccess={() => setActiveTab('feed')} />;
+        return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
       case 'profile':
-        return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setActiveTab('settings')} />;
-      case 'settings':
-        return <SettingsPage onBack={() => setActiveTab('profile')} />;
+        return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} />;
       default:
-        return <Feed onPlayTrack={handlePlayTrack} />;
+        return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
     }
   };
 
@@ -81,8 +109,10 @@ const MainLayout: React.FC = () => {
             onClose={() => setCurrentTrack(null)} 
         />
 
-        {/* Bottom Nav */}
-        <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+        {/* Bottom Nav - Hide if in overlay mode */}
+        {overlayView === 'none' && (
+            <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
+        )}
       </main>
     </div>
   );

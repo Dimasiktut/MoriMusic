@@ -10,6 +10,7 @@ import {
   SkipForward, 
   SkipBack,
   MoreVertical,
+  MoreHorizontal,
   X,
   Music,
   Share2,
@@ -18,7 +19,9 @@ import {
   Camera,
   Save,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Search,
+  Trash2
 } from 'lucide-react';
 
 export {
@@ -33,6 +36,7 @@ export {
   SkipForward, 
   SkipBack,
   MoreVertical,
+  MoreHorizontal,
   X,
   Music,
   Share2,
@@ -41,5 +45,7 @@ export {
   Camera,
   Save,
   Globe,
-  ExternalLink
+  ExternalLink,
+  Search,
+  Trash2
 };

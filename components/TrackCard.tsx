@@ -1,17 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Share2 } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2 } from './ui/Icons';
 import { useStore } from '../services/store';
 
 interface TrackCardProps {
   track: Track;
   onPlay: (track: Track) => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
-const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay }) => {
-  const { toggleLike, addComment } = useStore();
+const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
+  const { currentUser, toggleLike, addComment, deleteTrack } = useStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -25,8 +38,18 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay }) => {
     setCommentText('');
   };
 
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm("Are you sure you want to delete this track? This cannot be undone.")) {
+        await deleteTrack(track.id);
+    }
+    setShowMenu(false);
+  };
+
+  const isOwner = currentUser?.id === track.uploaderId;
+
   return (
-    <div className="bg-zinc-900 border border-white/5 rounded-2xl p-4 mb-4 shadow-sm hover:bg-zinc-800/50 transition-colors">
+    <div className="bg-zinc-900 border border-white/5 rounded-2xl p-4 mb-4 shadow-sm hover:bg-zinc-800/50 transition-colors relative">
       <div className="flex gap-4">
         {/* Cover Art & Play Overlay */}
         <div 
@@ -42,15 +65,47 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay }) => {
         </div>
 
         {/* Track Info */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center">
+        <div className="flex-1 min-w-0 flex flex-col justify-center relative">
             <div className="flex justify-between items-start">
-                <div>
+                <div className="min-w-0 flex-1 mr-6">
                     <h3 className="text-white font-bold truncate leading-tight mb-1">{track.title}</h3>
-                    <p className="text-zinc-400 text-sm truncate">{track.uploaderName}</p>
+                    <p 
+                        className="text-zinc-400 text-sm truncate cursor-pointer hover:text-violet-400 transition-colors"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenProfile && onOpenProfile(track.uploaderId);
+                        }}
+                    >
+                        {track.uploaderName}
+                    </p>
                 </div>
-                <button className="text-zinc-500 p-1">
-                    <MoreVertical size={16} />
-                </button>
+                
+                {/* Menu Button */}
+                <div className="absolute top-0 right-0" ref={menuRef}>
+                    <button 
+                        className="text-zinc-500 p-1 hover:text-white transition-colors"
+                        onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
+                    >
+                        <MoreVertical size={16} />
+                    </button>
+                    
+                    {/* Dropdown Menu */}
+                    {showMenu && (
+                        <div className="absolute right-0 top-6 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-10 w-32 animate-in fade-in zoom-in-95 duration-100">
+                             <button className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
+                                <Share2 size={12} /> Share
+                             </button>
+                             {isOwner && (
+                                <button 
+                                    onClick={handleDelete}
+                                    className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2"
+                                >
+                                    <Trash2 size={12} /> Delete
+                                </button>
+                             )}
+                        </div>
+                    )}
+                </div>
             </div>
             
             <div className="flex items-center gap-2 mt-2">
