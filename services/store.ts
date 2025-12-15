@@ -157,7 +157,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           
           if(error) throw error;
           
-          return (data || []).map((item: any) => ({
+          const safeData = data as any[] || [];
+          return safeData.map((item) => ({
               id: item.id,
               userId: item.user_id,
               title: item.title,
@@ -181,8 +182,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (error) throw error;
 
-          // @ts-ignore
-          return (data || []).map((item: any) => {
+          const safeData = data as any[] || [];
+          return safeData.map((item) => {
               const p = item.playlists;
               if (!p) return null;
               return {
@@ -220,8 +221,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (error) throw error;
           
-          // @ts-ignore
-          const rawTracks = (data || []).map((item: any) => item.tracks).filter(Boolean);
+          const safeData = data as any[] || [];
+          const rawTracks = safeData.map((item) => item.tracks).filter(Boolean);
           
           return await mapTracksData(rawTracks, currentUser?.id);
       } catch (e) {
