@@ -48,7 +48,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
       genre,
       audioUrl,
       coverUrl,
-      duration: 180, // Mock duration since we can't easily parse without metadata libs
+      duration: 180, // Mock duration
     });
 
     onUploadSuccess();

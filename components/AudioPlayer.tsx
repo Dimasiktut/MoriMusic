@@ -89,6 +89,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
           </div>
 
           <div className="flex items-center gap-4">
+             {/* Using duration here fixes TS6133 */}
              <span className="text-xs text-zinc-500 font-mono">
                  {formatTime(audioRef.current?.currentTime || 0)} / {formatTime(duration)}
              </span>

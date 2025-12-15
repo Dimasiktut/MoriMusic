@@ -28,7 +28,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await new Promise(resolve => setTimeout(resolve, 800));
 
       // Telegram WebApp Mock Integration
-      // In a real app, we would validate initData with backend
       // @ts-ignore
       const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
       
@@ -94,9 +93,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
       return t;
     }));
-
-    // Update user stats if it's their own track? 
-    // Usually likesReceived counts likes from OTHERS, but for simplicity let's leave it.
   }, []);
 
   const addComment = useCallback((trackId: string, text: string) => {
