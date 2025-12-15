@@ -32,5 +32,11 @@ export const TELEGRAM_CHAT_ID = '@clan_mori';
 export const TELEGRAM_GROUP_LINK = 'https://t.me/clan_mori';
 
 // Ссылка на ваше Mini App для генерации Deep Links
-// Формат: https://t.me/<BOT_USERNAME>/<APP_NAME>
+// ВАЖНО: Чтобы эта ссылка работала, вы должны создать приложение в BotFather через команду /newapp
+// 1. Откройте BotFather
+// 2. Напишите /newapp
+// 3. Выберите бота
+// 4. Введите название и описание
+// 5. Когда спросит "Short Name", введите: app
+// 6. Введите URL вашего Vercel проекта
 export const TELEGRAM_APP_LINK = 'https://t.me/morimusics_bot/app';

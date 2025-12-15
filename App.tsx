@@ -55,15 +55,19 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     // Only proceed if we have tracks, haven't processed the link yet, and no track is currently playing
     if (tracks.length > 0 && !deepLinkProcessed.current) {
-        // 1. Check Telegram Start Param
+        // 1. Check Telegram SDK Start Param (Native Telegram App)
         // @ts-ignore
         const tgParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
         
-        // 2. Check Web URL Param (fallback for dev or direct links)
+        // 2. Check URL Search Param (Direct Browser Link: ?startapp=...)
         const urlParams = new URLSearchParams(window.location.search);
         const webParam = urlParams.get('startapp');
 
-        const startParam = tgParam || webParam;
+        // 3. Check Hash Param (Sometimes Telegram passes it in hash: #tgWebAppData=...&tgWebAppStartParam=...)
+        const hashParams = new URLSearchParams(window.location.hash.slice(1));
+        const hashParam = hashParams.get('tgWebAppStartParam');
+
+        const startParam = tgParam || webParam || hashParam;
 
         if (startParam && startParam.startsWith('track_')) {
             const trackId = startParam.replace('track_', '');
@@ -71,11 +75,12 @@ const MainLayout: React.FC = () => {
             if (found) {
                 console.log("Deep link found, playing track:", found.title);
                 setCurrentTrack(found);
+            } else {
+                console.warn("Deep link track not found in loaded tracks:", trackId);
             }
         }
         
-        // Mark as processed regardless of whether we found the track or not, 
-        // to prevent repeated attempts when tracks array updates.
+        // Mark as processed regardless of whether we found the track or not
         deepLinkProcessed.current = true;
     }
   }, [tracks]); // Run when tracks are loaded
