@@ -1,0 +1,5 @@
+{
+  "name": "MoriMusic",
+  "description": "A community-driven music platform for Telegram WebApp. Upload tracks, explore charts, and connect with artists.",
+  "requestFramePermissions": []
+}
