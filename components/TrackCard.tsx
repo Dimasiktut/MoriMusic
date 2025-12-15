@@ -51,8 +51,8 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
-    const shareText = `Listen to ${track.title} by ${track.uploaderName} on MoriMusic 🎧`;
+    const deepLink = `${TELEGRAM_APP_LINK}`;
+    const shareText = `Слушать мой трек название: ${track.title} Автор: ${track.uploaderName} on MoriMusic 🎧`;
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
