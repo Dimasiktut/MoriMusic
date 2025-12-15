@@ -119,10 +119,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Ensure Supabase Auth session (Anon)
+        // Attempt Anonymous Sign-in (Best effort, don't crash if it fails)
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
-           await supabase.auth.signInAnonymously().catch(err => console.warn("Anon sign-in failed", err));
+           await supabase.auth.signInAnonymously().catch(err => {
+               // This is expected if Anon Auth is disabled in Supabase
+               console.warn("Anonymous sign-in skipped (check Supabase Auth settings):", err.message);
+           });
         }
 
         // @ts-ignore
@@ -208,34 +211,43 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
         setIsLoading(true);
 
-        // Sanitize helper
         const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
 
-        // 1. Authenticate with Supabase to get UUID for storage path
-        const { data: { user: sbUser }, error: authError } = await supabase.auth.getUser();
-        let storageOwnerId = sbUser?.id;
+        // 1. Attempt to resolve a Storage Owner ID
+        // Try to get the Authenticated Supabase User ID (UUID).
+        // If that fails (e.g. Anon Auth disabled), fall back to Telegram ID.
+        let storageOwnerId: string | undefined;
 
-        // If no user (rare if initApp worked), try one last sign in
-        if (!storageOwnerId || authError) {
-            const { data: anonData } = await supabase.auth.signInAnonymously();
-            storageOwnerId = anonData.user?.id;
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            storageOwnerId = user?.id;
+            
+            if (!storageOwnerId) {
+                const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();
+                if (!anonError && anonData.user) {
+                    storageOwnerId = anonData.user.id;
+                } else {
+                    console.warn("Could not authenticate with Supabase for upload. Proceeding with Telegram ID fallback.");
+                }
+            }
+        } catch (authErr) {
+            console.warn("Auth check failed, using fallback.", authErr);
         }
 
-        if (!storageOwnerId) {
-             throw new Error("Could not authenticate with Supabase Storage. Please refresh and try again.");
-        }
+        // If we have a UUID from Supabase, use it (better for RLS). 
+        // If not, use the Telegram ID (requires Public bucket policy).
+        const uploadPathOwner = storageOwnerId || currentUser.id.toString();
 
         // 2. Upload Audio
-        // We use the Supabase UUID (storageOwnerId) for the folder to satisfy standard RLS policies (auth.uid())
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
-        const audioPath = `audio/${storageOwnerId}/${audioName}`;
+        const audioPath = `audio/${uploadPathOwner}/${audioName}`;
         
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
         
         if (audioError) {
-             throw new Error(`Audio upload failed (Storage): ${audioError.message}.`);
+             throw new Error(`Audio upload failed: ${audioError.message}`);
         }
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
@@ -244,7 +256,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         let coverUrl = 'https://picsum.photos/400/400?random=default';
         if (data.coverFile) {
             const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
-            const coverPath = `covers/${storageOwnerId}/${coverName}`;
+            const coverPath = `covers/${uploadPathOwner}/${coverName}`;
             
             const { error: coverError } = await supabase.storage
                 .from('music')
@@ -259,7 +271,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         // 4. Insert Track Record
-        // We still use currentUser.id (Telegram ID) for the uploader_id in the database for profile linking
+        // We always use currentUser.id (Telegram ID) for the database relation
         const { error: dbError } = await supabase.from('tracks').insert({
             uploader_id: currentUser.id,
             title: data.title,
@@ -277,8 +289,28 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     } catch (e: any) {
         console.error("Upload failed", e);
-        // Instructional Alert
-        alert(`Upload Failed!\n\nError: ${e.message || JSON.stringify(e)}\n\nACTION REQUIRED:\nGo to Supabase Dashboard -> Storage -> 'music' bucket -> Policies.\nEnsure you have an INSERT policy for 'Authenticated' users.`);
+        
+        const errorMsg = e.message || JSON.stringify(e);
+        let helpText = "Unknown error occurred.";
+
+        if (errorMsg.includes("row-level security") || errorMsg.includes("policy") || errorMsg.includes("permission denied")) {
+            helpText = `
+SETUP REQUIRED (Do one of these):
+
+OPTION A (Recommended):
+1. Go to Supabase Dashboard > Authentication > Providers
+2. Enable "Anonymous Sign-ins"
+3. Click Save
+
+OPTION B (Easier):
+1. Go to Supabase Dashboard > Storage > 'music' bucket > Policies
+2. Create Policy: "Give users access to all files"
+3. Select "All" operations (INSERT, SELECT, etc)
+4. Check "Anon" and "Authenticated" roles
+`;
+        }
+
+        alert(`Upload Failed!\n\n${errorMsg}\n\n${helpText}`);
     } finally {
         setIsLoading(false);
     }
