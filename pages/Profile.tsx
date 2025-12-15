@@ -17,10 +17,8 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
-  // Tabs State
   const [activeTab, setActiveTab] = useState<'tracks' | 'likes' | 'history' | 'playlists'>('tracks');
   
-  // Data States
   const [likedTracks, setLikedTracks] = useState<Track[]>([]);
   const [loadingLikes, setLoadingLikes] = useState(false);
 
@@ -30,7 +28,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   
-  // Create Playlist Modal
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
@@ -106,7 +103,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
 
   return (
     <div className="pb-32 animate-in fade-in slide-in-from-bottom-4 duration-300 relative">
-       {/* Create Playlist Modal */}
        {showCreatePlaylist && (
            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                <div className="bg-zinc-900 border border-zinc-700 rounded-2xl w-full max-w-sm p-6 space-y-4">
@@ -138,7 +134,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            </div>
        )}
 
-       {/* Header */}
        <div className="h-40 bg-zinc-900 relative overflow-hidden">
            {profileUser.headerUrl ? (
                <img src={profileUser.headerUrl} alt="header" className="w-full h-full object-cover" />
@@ -147,20 +142,10 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            )}
            <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
            {onBack && (
-               <button 
-                 onClick={onBack}
-                 className="absolute top-4 left-4 text-white/80 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-colors z-20"
-               >
-                   <ArrowLeft size={20} />
-               </button>
+               <button onClick={onBack} className="absolute top-4 left-4 text-white/80 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-colors z-20"><ArrowLeft size={20} /></button>
            )}
            {isOwnProfile && (
-                <button 
-                    onClick={onEditProfile}
-                    className="absolute top-4 right-4 text-white/80 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-colors z-20"
-                >
-                    <Settings size={20} />
-                </button>
+                <button onClick={onEditProfile} className="absolute top-4 right-4 text-white/80 p-2 bg-black/20 hover:bg-black/40 rounded-full backdrop-blur-sm transition-colors z-20"><Settings size={20} /></button>
            )}
        </div>
 
@@ -170,9 +155,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    {profileUser.photoUrl ? (
                        <img src={profileUser.photoUrl} alt="avatar" className="w-full h-full object-cover" />
                    ) : (
-                       <div className="w-full h-full flex items-center justify-center bg-violet-600 text-3xl font-bold">
-                           {profileUser.username[0].toUpperCase()}
-                       </div>
+                       <div className="w-full h-full flex items-center justify-center bg-violet-600 text-3xl font-bold">{profileUser.username[0].toUpperCase()}</div>
                    )}
                </div>
                

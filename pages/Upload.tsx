@@ -34,7 +34,6 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
       const file = e.target.files[0];
       setAudioFile(file);
       
-      // Calculate duration
       const audio = new Audio(URL.createObjectURL(file));
       audio.onloadedmetadata = () => {
           setDuration(audio.duration);
@@ -107,9 +106,8 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
        
        <form onSubmit={handleSubmit} className="space-y-6">
           
-          {/* File Inputs */}
           <div className="grid grid-cols-2 gap-4">
-             {/* Cover Upload (Common for both) */}
+             {/* Cover Upload */}
              <div 
                 onClick={() => coverInputRef.current?.click()}
                 className="aspect-square rounded-2xl bg-zinc-900 border-2 border-dashed border-zinc-700 hover:border-violet-500 flex flex-col items-center justify-center cursor-pointer transition-colors relative overflow-hidden"

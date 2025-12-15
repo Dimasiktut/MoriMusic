@@ -17,7 +17,7 @@ interface UploadTrackData {
 interface StoreContextType {
   currentUser: User | null;
   tracks: Track[];
-  myPlaylists: Playlist[]; // New: Cache current user playlists for "Add to Playlist" menus
+  myPlaylists: Playlist[]; 
   isLoading: boolean;
   language: Language;
   setLanguage: (lang: Language) => void;
@@ -47,7 +47,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
-  // Default to Russian if not set
   const [language, setLanguageState] = useState<Language>(() => {
     const saved = localStorage.getItem('mori_language');
     return (saved === 'en' || saved === 'ru') ? saved : 'ru';
@@ -62,10 +61,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return TRANSLATIONS[language][key] || key;
   }, [language]);
 
-  const checkVerification = (stats: { uploads: number, totalPlays: number }) => {
-      return stats.uploads >= 3 || stats.totalPlays > 1000;
-  };
-
+  // Helper to map DB track to UI Track
   const mapTracksData = async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
 
@@ -84,6 +80,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
          let likesCount = 0;
 
          try {
+             // Fetch simplified comments
              const { data: commentsData } = await supabase
                 .from('comments')
                 .select('*')
@@ -92,6 +89,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 .limit(3);
              if (commentsData) comments = commentsData;
 
+             // Fetch simplified likes
              const { count } = await supabase
                 .from('track_likes')
                 .select('*', { count: 'exact', head: true })
@@ -139,14 +137,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       
       const mapped = await mapTracksData(tracksData || [], userId);
       setTracks(mapped);
-
     } catch (e: any) {
-      console.error("Error fetching tracks:", JSON.stringify(e, null, 2));
+      console.error("Error fetching tracks:", e);
       setTracks([]); 
     }
   }, []);
 
-  // Fetch Playlists for a specific user
   const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
           const { data, error } = await supabase
@@ -163,10 +159,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               title: p.title,
               coverUrl: p.cover_url,
               createdAt: p.created_at,
-              trackCount: 0 // In a real app, join playlist_items count
+              trackCount: 0 
           }));
       } catch (e) {
-          console.warn("Fetch playlists error (table might not exist)", e);
+          console.warn("Fetch playlists error (table might not exist yet)", e);
           return [];
       }
   }, []);
@@ -186,7 +182,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setMyPlaylists(updated);
       } catch (e) {
           console.error("Create playlist error", e);
-          alert("Failed to create playlist.");
+          alert("Failed to create playlist. Database table might be missing.");
       }
   }, [currentUser, fetchUserPlaylists]);
 
@@ -197,7 +193,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               playlist_id: playlistId,
               track_id: trackId
           });
-          if (error && error.code !== '23505') { // Ignore duplicate insert errors
+          if (error && error.code !== '23505') { // Ignore unique violation
                throw error;
           }
       } catch (e) {
@@ -234,8 +230,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               links: profile.links || {},
               stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
             });
+            // Load playlists if user exists
+            const playlists = await fetchUserPlaylists(userId);
+            setMyPlaylists(playlists);
           } else {
-            // Register logic... omitted for brevity, assumes already handled
+             // Fallback or registration (simplified)
              setCurrentUser({
                 ...INITIAL_USER,
                 id: userId,
@@ -244,10 +243,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 photoUrl: tgUser.photo_url
              });
           }
-          
-          // Fetch My Playlists if logged in
-          const playlists = await fetchUserPlaylists(userId);
-          setMyPlaylists(playlists);
         }
 
         await fetchTracks(userId);
@@ -323,7 +318,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         if (dbError) throw new Error(dbError.message);
-        await fetchTracks(currentUser.id); // Refresh
+        await fetchTracks(currentUser.id); // Refresh feed
         
     } catch (e: any) {
         console.error("Upload failed", e);
@@ -335,7 +330,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!currentUser) return;
     setIsLoading(true);
     
-    // Check membership once
+    // Check membership
     const isMember = await checkGroupMembership(currentUser.id);
     if (!isMember) {
         alert(t('upload_access_denied'));
@@ -359,7 +354,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // Loop Files
         for (const file of files) {
-             // Calculate Duration for each file
+             // Calculate Duration
              let duration = 0;
              try {
                 const audio = new Audio(URL.createObjectURL(file));
@@ -368,6 +363,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         duration = audio.duration;
                         resolve(true);
                     };
+                    audio.onerror = () => resolve(true); // skip on error
                 });
              } catch(err) { console.warn("Duration calc failed", err); }
 
@@ -392,8 +388,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
-        // ... (existing delete logic)
-        await supabase.from('tracks').delete().eq('id', trackId);
+        // Cleaning up related data
+        await Promise.all([
+             supabase.from('comments').delete().eq('track_id', trackId),
+             supabase.from('track_likes').delete().eq('track_id', trackId),
+             supabase.from('listen_history').delete().eq('track_id', trackId),
+             supabase.from('playlist_items').delete().eq('track_id', trackId)
+        ]);
+
+        const { error } = await supabase.from('tracks').delete().eq('id', trackId);
+        if (error) throw error;
+
         setTracks(prev => prev.filter(t => t.id !== trackId));
     } catch (e: any) {
         console.error("Delete track error", e);
@@ -410,7 +415,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
         return t;
       }));
-      // API call
       try {
         const { data } = await supabase.from('track_likes').select('*').eq('user_id', currentUser.id).eq('track_id', trackId).single();
         if (data) await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
@@ -451,15 +455,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [currentUser]);
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
-      // ... (existing update logic)
       if (!currentUser) return;
-      await supabase.from('profiles').update({ ...updates }).eq('id', currentUser.id);
+      const dbUpdates: any = {};
+      if (updates.firstName !== undefined) dbUpdates.first_name = updates.firstName;
+      if (updates.lastName !== undefined) dbUpdates.last_name = updates.lastName;
+      if (updates.bio !== undefined) dbUpdates.bio = updates.bio;
+      if (updates.photoUrl !== undefined) dbUpdates.photo_url = updates.photoUrl;
+      if (updates.headerUrl !== undefined) dbUpdates.header_url = updates.headerUrl; 
+      if (updates.links !== undefined) dbUpdates.links = updates.links;
+
+      await supabase.from('profiles').update(dbUpdates).eq('id', currentUser.id);
       setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
   }, [currentUser]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
        if (!data) return null;
+       
+       // Simplified stats fetching for profile view
+       const { count: uploads } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
+       
        return {
            id: data.id,
            username: data.username,
@@ -469,17 +484,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
            headerUrl: data.header_url,
            bio: data.bio,
            links: data.links || {},
-           stats: { uploads: 0, likesReceived: 0, totalPlays: 0 } // simplified for brevity
+           stats: { uploads: uploads || 0, likesReceived: 0, totalPlays: 0 }
        };
   }, []);
 
   const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => {
-       // ... existing chart logic
-       return [];
-  }, []);
+      // Simplified charts logic - returns top tracks by likes/plays for now
+      // In production, this would use the listen_history table aggregation
+      try {
+          const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', {ascending: false}).limit(50);
+          return mapTracksData(data || [], currentUser?.id);
+      } catch { return []; }
+  }, [currentUser]);
 
   const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
-      // ... existing liked tracks logic
       const { data } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
       if(!data) return [];
       const ids = data.map(i => i.track_id);
