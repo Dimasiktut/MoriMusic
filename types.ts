@@ -17,6 +17,7 @@ export interface User {
     likesReceived: number;
     totalPlays: number;
   };
+  isVerified?: boolean;
 }
 
 export interface Comment {
@@ -44,6 +45,7 @@ export interface Track {
   likes: number; // Count
   comments: Comment[];
   isLikedByCurrentUser?: boolean;
+  isVerifiedUploader?: boolean; // New field for UI
 }
 
 export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings';

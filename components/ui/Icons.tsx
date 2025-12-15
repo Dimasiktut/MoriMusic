@@ -25,7 +25,9 @@ import {
   Loader2,
   Image,
   Check,
-  Link
+  Link,
+  BadgeCheck,
+  Activity
 } from 'lucide-react';
 
 export {
@@ -55,5 +57,7 @@ export {
   Loader2,
   Image,
   Check,
-  Link
+  Link,
+  BadgeCheck,
+  Activity
 };

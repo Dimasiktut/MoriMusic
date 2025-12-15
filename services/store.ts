@@ -28,6 +28,7 @@ interface StoreContextType {
   uploadImage: (file: File, bucket: string, path: string) => Promise<string>;
   fetchUserById: (userId: number) => Promise<User | null>;
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
+  getLikedTracks: (userId: number) => Promise<Track[]>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -52,46 +53,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return TRANSLATIONS[language][key] || key;
   }, [language]);
 
-  // Helper to fetch tracks with joined data
-  const fetchTracks = useCallback(async (userId?: number) => {
-    try {
-      // 1. Get Tracks
-      const { data: tracksData, error } = await supabase
-        .from('tracks')
-        .select(`
-          *,
-          profiles:uploader_id (
-            username,
-            photo_url
-          )
-        `)
-        .order('created_at', { ascending: false });
+  // Determine verification status (simple logic for now)
+  const checkVerification = (stats: { uploads: number, totalPlays: number }) => {
+      // Example logic: Verified if > 3 uploads OR > 1000 plays
+      return stats.uploads >= 3 || stats.totalPlays > 1000;
+  };
 
-      if (error) throw error;
-      
-      if (!tracksData) {
-         setTracks([]);
-         return;
-      }
+  // Helper to map DB track to UI Track
+  const mapTracksData = async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
+      if (!rawTracks || rawTracks.length === 0) return [];
 
-      // 2. Get Likes for current user (to set isLikedByCurrentUser)
       let userLikes: string[] = [];
-      if (userId) {
+      if (currentUserId) {
         const { data: likesData } = await supabase
           .from('track_likes')
           .select('track_id')
-          .eq('user_id', userId);
+          .eq('user_id', currentUserId);
         
         if (likesData) userLikes = likesData.map(l => l.track_id);
       }
 
-      // 3. Map DB response to UI Track type
-      const mappedTracks: Track[] = await Promise.all(tracksData.map(async (t: any) => {
+      return Promise.all(rawTracks.map(async (t: any) => {
          let comments: Comment[] = [];
          let likesCount = 0;
+         let uploaderStats = { uploads: 0, totalPlays: 0 }; // simplified for list view
 
          try {
-             // Get latest 3 comments
              const { data: commentsData } = await supabase
                 .from('comments')
                 .select('*')
@@ -100,12 +87,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 .limit(3);
              if (commentsData) comments = commentsData;
 
-             // Get like count
              const { count } = await supabase
                 .from('track_likes')
                 .select('*', { count: 'exact', head: true })
                 .eq('track_id', t.id);
              if (count !== null) likesCount = count;
+             
+             // Optimization: In a real app, 'isVerified' should be a column on the 'profiles' table.
+             // Here we just mock it true for demo purposes if plays > 1000 on the track itself as a heuristic
+             // or fetch profile stats if critical.
          } catch (innerErr) {
              console.warn(`Error fetching details for track ${t.id}`, innerErr);
          }
@@ -126,22 +116,71 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           likes: likesCount,
           comments: comments,
           isLikedByCurrentUser: userLikes.includes(t.id),
+          isVerifiedUploader: t.plays > 1000 // Temporary logic: verify high performing tracks' authors
         };
       }));
+  };
 
-      setTracks(mappedTracks);
+  const fetchTracks = useCallback(async (userId?: number) => {
+    try {
+      const { data: tracksData, error } = await supabase
+        .from('tracks')
+        .select(`
+          *,
+          profiles:uploader_id (
+            username,
+            photo_url
+          )
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      const mapped = await mapTracksData(tracksData || [], userId);
+      setTracks(mapped);
 
     } catch (e: any) {
       console.error("Error fetching tracks:", JSON.stringify(e, null, 2));
-      setTracks([]); // Empty state on error
+      setTracks([]); 
     }
   }, []);
+
+  const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
+    try {
+        // 1. Get IDs of liked tracks
+        const { data: likes } = await supabase
+            .from('track_likes')
+            .select('track_id')
+            .eq('user_id', userId);
+        
+        if (!likes || likes.length === 0) return [];
+        const ids = likes.map(l => l.track_id);
+
+        // 2. Fetch those tracks
+        const { data: tracksData } = await supabase
+            .from('tracks')
+            .select(`
+                *,
+                profiles:uploader_id (
+                    username,
+                    photo_url
+                )
+            `)
+            .in('id', ids)
+            .order('created_at', { ascending: false });
+        
+        // 3. Map
+        return await mapTracksData(tracksData || [], currentUser?.id);
+    } catch (e) {
+        console.error("Error fetching liked tracks", e);
+        return [];
+    }
+  }, [currentUser]);
 
   // Initialize App
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Attempt Anonymous Sign-in (Best effort, don't crash if it fails)
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
            await supabase.auth.signInAnonymously().catch(err => {
@@ -163,16 +202,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             .single();
 
           if (profile) {
+            // Check verification based on simple stats (fetch real stats if needed)
+            const isVerified = false; // Logic moved to fetchUserById for detailed views
+
             setCurrentUser({
               id: profile.id,
               username: profile.username,
               firstName: profile.first_name,
               lastName: profile.last_name,
               photoUrl: profile.photo_url,
-              headerUrl: profile.header_url, // Map DB header_url
+              headerUrl: profile.header_url, 
               bio: profile.bio,
               links: profile.links || {},
-              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }
+              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
+              isVerified: isVerified
             });
           } else if (error && error.code === 'PGRST116') { 
             const newUser = {
@@ -294,8 +337,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
         const audioPath = `audio/${uploadPathOwner}/${audioName}`;
         
-        // Use direct supabase call here instead of helper for custom error handling/logic if needed, 
-        // but basically same logic.
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
@@ -457,7 +498,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (updates.lastName) dbUpdates.last_name = updates.lastName;
     if (updates.bio) dbUpdates.bio = updates.bio;
     if (updates.photoUrl) dbUpdates.photo_url = updates.photoUrl;
-    if (updates.headerUrl) dbUpdates.header_url = updates.headerUrl; // Map headerUrl
+    if (updates.headerUrl) dbUpdates.header_url = updates.headerUrl; 
     if (updates.links) dbUpdates.links = updates.links;
 
     try {
@@ -485,6 +526,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const { count } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).in('track_id', trackIds);
           likesReceived = count || 0;
       }
+      
+      const stats = { uploads: uploads || 0, likesReceived: likesReceived, totalPlays: totalPlays };
+      const isVerified = checkVerification(stats);
 
       return {
           id: profile.id,
@@ -492,10 +536,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           firstName: profile.first_name,
           lastName: profile.last_name,
           photoUrl: profile.photo_url,
-          headerUrl: profile.header_url, // Map header_url from DB
+          headerUrl: profile.header_url,
           bio: profile.bio,
           links: profile.links || {},
-          stats: { uploads: uploads || 0, likesReceived: likesReceived, totalPlays: totalPlays }
+          stats: stats,
+          isVerified: isVerified
       };
     } catch (e) {
       console.error("Unexpected error in fetchUserById:", e);
@@ -544,30 +589,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             .in('id', sortedTrackIds);
 
           if (!tracksData) return [];
+          
+          // Re-use common mapper
+          const mapped = await mapTracksData(tracksData, currentUser?.id);
 
-           const mappedChartTracks: Track[] = await Promise.all(tracksData.map(async (t: any) => {
-              const { count: likes } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).eq('track_id', t.id);
-              
-              return {
-                  id: t.id,
-                  uploaderId: t.uploader_id,
-                  uploaderName: t.profiles?.username || 'Unknown',
-                  uploaderAvatar: t.profiles?.photo_url,
-                  title: t.title,
-                  description: t.description,
-                  genre: t.genre,
-                  coverUrl: t.cover_url,
-                  audioUrl: t.audio_url,
-                  duration: t.duration,
-                  createdAt: t.created_at,
-                  plays: t.plays,
-                  likes: likes || 0,
-                  comments: [],
-                  isLikedByCurrentUser: false
-              };
-           }));
-
-           return mappedChartTracks.sort((a, b) => {
+           return mapped.sort((a, b) => {
                const scoreA = trackScores[a.id] || 0;
                const scoreB = trackScores[b.id] || 0;
                return scoreB - scoreA;
@@ -577,7 +603,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           console.error("Error calculating charts", e);
           return [];
       }
-  }, []);
+  }, [currentUser]);
 
   return React.createElement(
     StoreContext.Provider,
@@ -597,7 +623,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateProfile,
         uploadImage,
         fetchUserById,
-        getChartTracks
+        getChartTracks,
+        getLikedTracks
       }
     },
     children

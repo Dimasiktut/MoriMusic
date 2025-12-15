@@ -3,6 +3,7 @@ import { useStore } from '../services/store';
 import TrackCard from '../components/TrackCard';
 import { Track } from '../types';
 import { Search } from '../components/ui/Icons';
+import { TrackSkeleton } from '../components/ui/Skeleton';
 
 interface FeedProps {
   onPlayTrack: (track: Track) => void;
@@ -29,10 +30,6 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
     }
     return (b.likes + b.plays) - (a.likes + a.plays);
   });
-
-  if (isLoading && tracks.length === 0) {
-      return <div className="p-10 text-center text-zinc-500">{t('feed_loading')}</div>;
-  }
 
   return (
     <div className="p-4 pb-32">
@@ -84,13 +81,23 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
       </div>
 
       <div className="space-y-2">
-        {sortedTracks.map(track => (
-          <TrackCard key={track.id} track={track} onPlay={onPlayTrack} onOpenProfile={onOpenProfile} />
-        ))}
-        {sortedTracks.length === 0 && (
-            <div className="text-center py-20 text-zinc-600">
-                {searchQuery ? t('feed_no_results') : t('feed_empty')}
-            </div>
+        {isLoading && tracks.length === 0 ? (
+            <>
+                <TrackSkeleton />
+                <TrackSkeleton />
+                <TrackSkeleton />
+            </>
+        ) : (
+            <>
+                {sortedTracks.map(track => (
+                    <TrackCard key={track.id} track={track} onPlay={onPlayTrack} onOpenProfile={onOpenProfile} />
+                ))}
+                {sortedTracks.length === 0 && (
+                    <div className="text-center py-20 text-zinc-600">
+                        {searchQuery ? t('feed_no_results') : t('feed_empty')}
+                    </div>
+                )}
+            </>
         )}
       </div>
     </div>

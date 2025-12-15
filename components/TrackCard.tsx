@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link, BadgeCheck } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -56,9 +56,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
-    
-    // Check if running inside Telegram
-    // Enhanced check: initData, platform, or UserAgent to strictly catch Android WebView environment
     const isTelegram = (tg && (tg.initData || tg.platform !== 'unknown')) || 
                        (navigator.userAgent && navigator.userAgent.includes('Telegram'));
 
@@ -74,20 +71,17 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
         });
     };
 
-    // 1. Inside Telegram: Use openTelegramLink OR Clipboard. NEVER navigator.share
     if (isTelegram) {
          if (tg && typeof tg.openTelegramLink === 'function') {
              const url = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
              tg.openTelegramLink(url);
          } else {
-             // Fallback to clipboard if openTelegramLink is missing (unlikely in WebApp)
              copyToClipboard();
          }
          setShowMenu(false);
          return;
     }
 
-    // 2. Outside Telegram (Regular Browser): Try Native Share, then Clipboard
     if (navigator.share) {
         try {
             await navigator.share({
@@ -133,15 +127,16 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
             <div className="flex justify-between items-start">
                 <div className="min-w-0 flex-1 mr-6">
                     <h3 className="text-white font-bold truncate leading-tight mb-1">{track.title}</h3>
-                    <p 
-                        className="text-zinc-400 text-sm truncate cursor-pointer hover:text-violet-400 transition-colors"
+                    <div 
+                        className="flex items-center gap-1 text-zinc-400 text-sm cursor-pointer hover:text-violet-400 transition-colors"
                         onClick={(e) => {
                             e.stopPropagation();
                             onOpenProfile && onOpenProfile(track.uploaderId);
                         }}
                     >
-                        {track.uploaderName}
-                    </p>
+                        <span className="truncate">{track.uploaderName}</span>
+                        {track.isVerifiedUploader && <BadgeCheck size={14} className="text-violet-500 fill-violet-500/10" />}
+                    </div>
                 </div>
                 
                 {/* Menu Button */}

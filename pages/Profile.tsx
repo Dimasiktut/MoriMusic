@@ -1,22 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ExternalLink, ArrowLeft } from '../components/ui/Icons';
+import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music } from '../components/ui/Icons';
 import { Track, User } from '../types';
 import TrackCard from '../components/TrackCard';
+import { TrackSkeleton } from '../components/ui/Skeleton';
 
 interface ProfileProps {
   onPlayTrack: (track: Track) => void;
   onEditProfile: () => void;
-  onBack?: () => void; // Present if viewing another user's profile
-  targetUserId?: number | null; // If null, show current user
+  onBack?: () => void; 
+  targetUserId?: number | null; 
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+  
+  // Tabs State
+  const [activeTab, setActiveTab] = useState<'tracks' | 'likes'>('tracks');
+  const [likedTracks, setLikedTracks] = useState<Track[]>([]);
+  const [loadingLikes, setLoadingLikes] = useState(false);
 
-  // Determine which user to show
+  // 1. Load User
   useEffect(() => {
     const loadUser = async () => {
         if (targetUserId && targetUserId !== currentUser?.id) {
@@ -31,7 +37,20 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     loadUser();
   }, [targetUserId, currentUser, fetchUserById]);
 
-  if (loadingProfile) return <div className="p-10 text-center text-zinc-500">{t('profile_loading')}</div>;
+  // 2. Load Likes when tab changes
+  useEffect(() => {
+    const loadLikes = async () => {
+        if (activeTab === 'likes' && profileUser) {
+            setLoadingLikes(true);
+            const likes = await getLikedTracks(profileUser.id);
+            setLikedTracks(likes);
+            setLoadingLikes(false);
+        }
+    };
+    loadLikes();
+  }, [activeTab, profileUser, getLikedTracks]);
+
+  if (loadingProfile) return <div className="p-4 pt-10"><TrackSkeleton /><TrackSkeleton /></div>;
   if (!profileUser) return <div className="p-10 text-center text-zinc-500">{t('profile_not_found')}</div>;
 
   const isOwnProfile = currentUser?.id === profileUser.id;
@@ -93,7 +112,11 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    )}
                </div>
                
-               <h2 className="text-xl font-bold mt-3 text-white">@{profileUser.username}</h2>
+               <div className="flex items-center gap-1 mt-3">
+                   <h2 className="text-xl font-bold text-white">@{profileUser.username}</h2>
+                   {profileUser.isVerified && <BadgeCheck size={18} className="text-violet-500 fill-violet-500/10" />}
+               </div>
+
                {profileUser.firstName && <span className="text-sm text-zinc-400">{profileUser.firstName} {profileUser.lastName}</span>}
                
                <p className="text-center text-zinc-300 text-sm mt-3 max-w-xs whitespace-pre-wrap">
@@ -116,7 +139,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                    </div>
                </div>
 
-               {/* Social Links with Labels */}
+               {/* Social Links */}
                <div className="flex flex-wrap gap-3 mt-6 justify-center">
                    {Object.entries(profileUser.links).map(([key, url]) => {
                        if (!url) return null;
@@ -134,25 +157,38 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                            </a>
                        );
                    })}
-                   {Object.values(profileUser.links).every(l => !l) && (
-                       <p className="text-xs text-zinc-600 italic">{t('profile_no_links')}</p>
-                   )}
                </div>
            </div>
 
-           {/* User Tracks */}
-           <div className="mt-8">
-               <h3 className="text-lg font-bold text-white mb-4">
-                   {isOwnProfile ? t('profile_my_tracks') : `${profileUser.username}${t('profile_user_tracks')}`}
-               </h3>
-               <div className="space-y-2">
-                   {userTracks.length > 0 ? (
+           {/* Tabs Switcher */}
+           <div className="mt-8 flex border-b border-zinc-800 mb-4">
+                <button
+                    onClick={() => setActiveTab('tracks')}
+                    className={`flex-1 pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'tracks' ? 'text-violet-400' : 'text-zinc-500'}`}
+                >
+                    <Music size={16} />
+                    {isOwnProfile ? t('profile_my_tracks') : t('profile_tracks')}
+                    {activeTab === 'tracks' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
+                </button>
+                <button
+                    onClick={() => setActiveTab('likes')}
+                    className={`flex-1 pb-3 text-sm font-medium transition-colors relative flex justify-center items-center gap-2 ${activeTab === 'likes' ? 'text-violet-400' : 'text-zinc-500'}`}
+                >
+                    <Heart size={16} />
+                    {t('profile_likes')}
+                    {activeTab === 'likes' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
+                </button>
+           </div>
+
+           {/* Content */}
+           <div className="space-y-2">
+               {activeTab === 'tracks' ? (
+                   userTracks.length > 0 ? (
                        userTracks.map(track => (
                            <TrackCard 
                                 key={track.id} 
                                 track={track} 
                                 onPlay={onPlayTrack}
-                                // Don't allow clicking profile to prevent recursion if we are already there
                                 onOpenProfile={isOwnProfile ? undefined : undefined} 
                            />
                        ))
@@ -160,8 +196,29 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                        <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
                            <p className="text-zinc-500 text-sm">{t('profile_no_tracks')}</p>
                        </div>
-                   )}
-               </div>
+                   )
+               ) : (
+                   /* Likes Tab */
+                   loadingLikes ? (
+                        <>
+                            <TrackSkeleton />
+                            <TrackSkeleton />
+                        </>
+                   ) : likedTracks.length > 0 ? (
+                       likedTracks.map(track => (
+                           <TrackCard 
+                                key={track.id} 
+                                track={track} 
+                                onPlay={onPlayTrack}
+                                onOpenProfile={onBack ? undefined : undefined} // Don't prevent nav if we are in own profile
+                           />
+                       ))
+                   ) : (
+                       <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
+                           <p className="text-zinc-500 text-sm">No liked tracks yet.</p>
+                       </div>
+                   )
+               )}
            </div>
        </div>
     </div>
