@@ -69,8 +69,9 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
           duration: duration || 180, 
         });
     } else {
-        if (albumFiles.length === 0) return;
+        if (albumFiles.length === 0 || !title) return;
         await uploadAlbum(albumFiles, {
+            title, // Album title
             description,
             genre,
             coverFile
@@ -186,19 +187,19 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
           </div>
 
           <div className="space-y-4">
-              {mode === 'single' && (
-                  <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1">{t('upload_label_title')}</label>
-                      <input 
-                        required
-                        type="text" 
-                        value={title}
-                        onChange={(e) => setTitle(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:ring-1 focus:ring-violet-500 outline-none"
-                        placeholder={t('upload_placeholder_title')}
-                      />
-                  </div>
-              )}
+              <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">
+                      {mode === 'single' ? t('upload_label_title') : t('upload_label_album_title')}
+                  </label>
+                  <input 
+                    required
+                    type="text" 
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:ring-1 focus:ring-violet-500 outline-none"
+                    placeholder={mode === 'single' ? t('upload_placeholder_title') : t('upload_placeholder_album_title')}
+                  />
+              </div>
 
               <div>
                   <label className="block text-xs font-medium text-zinc-400 mb-1">{t('upload_label_genre')}</label>
@@ -224,13 +225,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
 
           <button 
             type="submit"
-            disabled={(mode === 'single' ? (!audioFile || !title) : (albumFiles.length === 0)) || isLoading}
+            disabled={(mode === 'single' ? (!audioFile || !title) : (albumFiles.length === 0 || !title)) || isLoading}
             className="w-full bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold py-4 rounded-xl shadow-lg shadow-violet-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isLoading ? (
                 <>
                     <Loader2 className="animate-spin" size={20} />
-                    {t('upload_btn_loading')}
+                    {mode === 'single' ? t('upload_btn_loading') : t('upload_btn_loading_album')}
                 </>
             ) : (
                 mode === 'single' ? t('upload_btn') : t('upload_btn_album')

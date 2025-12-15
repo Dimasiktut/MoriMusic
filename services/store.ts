@@ -23,7 +23,7 @@ interface StoreContextType {
   setLanguage: (lang: Language) => void;
   t: (key: keyof typeof TRANSLATIONS['en']) => string;
   uploadTrack: (data: UploadTrackData) => Promise<void>;
-  uploadAlbum: (files: File[], commonData: { description: string, genre: string, coverFile: File | null }) => Promise<void>;
+  uploadAlbum: (files: File[], commonData: { title: string, description: string, genre: string, coverFile: File | null }) => Promise<void>;
   createPlaylist: (title: string) => Promise<void>;
   addToPlaylist: (trackId: string, playlistId: string) => Promise<void>;
   fetchUserPlaylists: (userId: number) => Promise<Playlist[]>;
@@ -349,7 +349,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             genre: data.genre,
             audio_url: audioUrl,
             cover_url: coverUrl,
-            duration: Math.round(data.duration) // Round duration to integer
+            duration: Math.round(data.duration) 
         });
 
         await fetchTracks(currentUser.id);
@@ -361,7 +361,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentUser, fetchTracks]);
 
-  const uploadAlbum = useCallback(async (files: File[], commonData: { description: string, genre: string, coverFile: File | null }) => {
+  const uploadAlbum = useCallback(async (files: File[], commonData: { title: string, description: string, genre: string, coverFile: File | null }) => {
     if (!currentUser) return;
     setIsLoading(true);
     
@@ -378,6 +378,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
              commonCoverUrl = await _uploadFileToStorage(commonData.coverFile, `covers/${currentUser.id}`);
         }
 
+        // Format description to include Album Title
+        const albumDesc = commonData.title 
+            ? `Album: ${commonData.title}\n${commonData.description}` 
+            : commonData.description;
+
         for (const file of files) {
              let duration = 0;
              try {
@@ -392,29 +397,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 });
              } catch(err) { console.warn("Duration calc failed", err); }
 
-            const title = file.name.replace(/\.[^/.]+$/, "");
+            const trackTitle = file.name.replace(/\.[^/.]+$/, "");
             
             const audioUrl = await _uploadFileToStorage(file, `audio/${currentUser.id}`);
 
             await _insertTrackToDb({
                 uploader_id: currentUser.id,
-                title,
-                description: commonData.description,
+                title: trackTitle,
+                description: albumDesc,
                 genre: commonData.genre,
                 audio_url: audioUrl,
                 cover_url: commonCoverUrl || 'https://picsum.photos/400/400?random=default',
-                duration: Math.round(duration || 180) // Round duration to integer
+                duration: Math.round(duration || 180) 
             });
         }
         
         await fetchTracks(currentUser.id);
+        alert(language === 'ru' ? `Альбом "${commonData.title}" успешно загружен!` : `Album "${commonData.title}" uploaded successfully!`);
     } catch (e: any) {
         console.error("Album upload error", e);
         alert(`Failed: ${e.message}`);
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, fetchTracks, t]);
+  }, [currentUser, fetchTracks, t, language]);
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
