@@ -119,8 +119,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const initApp = async () => {
       try {
-        // Try to sign in anonymously to satisfy basic RLS policies (e.g., "authenticated" role)
-        // This is a "best effort" to fix RLS errors without backend access.
+        // Ensure Supabase Auth session (Anon)
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
            await supabase.auth.signInAnonymously().catch(err => console.warn("Anon sign-in failed", err));
@@ -212,29 +211,40 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // Sanitize helper
         const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
 
-        // 1. Upload Audio
+        // 1. Authenticate with Supabase to get UUID for storage path
+        const { data: { user: sbUser }, error: authError } = await supabase.auth.getUser();
+        let storageOwnerId = sbUser?.id;
+
+        // If no user (rare if initApp worked), try one last sign in
+        if (!storageOwnerId || authError) {
+            const { data: anonData } = await supabase.auth.signInAnonymously();
+            storageOwnerId = anonData.user?.id;
+        }
+
+        if (!storageOwnerId) {
+             throw new Error("Could not authenticate with Supabase Storage. Please refresh and try again.");
+        }
+
+        // 2. Upload Audio
+        // We use the Supabase UUID (storageOwnerId) for the folder to satisfy standard RLS policies (auth.uid())
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
-        // Note: We use currentUser.id (Telegram ID) in path. 
-        // If RLS enforces auth.uid() match, this will fail unless we are authenticated as that user.
-        // Since we are likely anon or signed in anonymously with a different UUID, 
-        // the Storage RLS policy must be permissive (e.g., public or allow 'authenticated' generally).
-        const audioPath = `audio/${currentUser.id}/${audioName}`;
+        const audioPath = `audio/${storageOwnerId}/${audioName}`;
         
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
         
         if (audioError) {
-             throw new Error(`Audio upload failed (Storage): ${audioError.message}. Check your Storage RLS policies.`);
+             throw new Error(`Audio upload failed (Storage): ${audioError.message}.`);
         }
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
 
-        // 2. Upload Cover (if exists)
+        // 3. Upload Cover (if exists)
         let coverUrl = 'https://picsum.photos/400/400?random=default';
         if (data.coverFile) {
             const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
-            const coverPath = `covers/${currentUser.id}/${coverName}`;
+            const coverPath = `covers/${storageOwnerId}/${coverName}`;
             
             const { error: coverError } = await supabase.storage
                 .from('music')
@@ -248,7 +258,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
         }
 
-        // 3. Insert Track Record
+        // 4. Insert Track Record
+        // We still use currentUser.id (Telegram ID) for the uploader_id in the database for profile linking
         const { error: dbError } = await supabase.from('tracks').insert({
             uploader_id: currentUser.id,
             title: data.title,
@@ -266,8 +277,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     } catch (e: any) {
         console.error("Upload failed", e);
-        // Show the actual error message to help debugging
-        alert(`Upload Failed!\n\n${e.message || JSON.stringify(e)}\n\nTip: If you see "row level security policy", you need to disable RLS or add a policy in Supabase Dashboard for the 'music' bucket and 'tracks' table.`);
+        // Instructional Alert
+        alert(`Upload Failed!\n\nError: ${e.message || JSON.stringify(e)}\n\nACTION REQUIRED:\nGo to Supabase Dashboard -> Storage -> 'music' bucket -> Policies.\nEnsure you have an INSERT policy for 'Authenticated' users.`);
     } finally {
         setIsLoading(false);
     }
