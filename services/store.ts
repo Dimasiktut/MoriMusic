@@ -22,6 +22,7 @@ interface StoreContextType {
   addComment: (trackId: string, text: string) => Promise<void>;
   recordListen: (trackId: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
+  uploadImage: (file: File, bucket: string, path: string) => Promise<string>;
   fetchUserById: (userId: number) => Promise<User | null>;
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
 }
@@ -150,6 +151,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               firstName: profile.first_name,
               lastName: profile.last_name,
               photoUrl: profile.photo_url,
+              headerUrl: profile.header_url, // Map DB header_url
               bio: profile.bio,
               links: profile.links || {},
               stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }
@@ -223,6 +225,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const uploadImage = useCallback(async (file: File, bucket: string, path: string): Promise<string> => {
+      const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+      return data.publicUrl;
+  }, []);
+
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
     try {
@@ -267,6 +276,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
         const audioPath = `audio/${uploadPathOwner}/${audioName}`;
         
+        // Use direct supabase call here instead of helper for custom error handling/logic if needed, 
+        // but basically same logic.
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
@@ -319,7 +330,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await Promise.all([
             supabase.from('comments').delete().eq('track_id', trackId),
             supabase.from('track_likes').delete().eq('track_id', trackId),
-            // Also clean up history for this track
             supabase.from('listen_history').delete().eq('track_id', trackId)
         ]);
 
@@ -399,24 +409,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [currentUser]);
 
-  // --- NEW LISTENING LOGIC ---
   const recordListen = useCallback(async (trackId: string) => {
-    // 1. Optimistically update visual "Total Plays"
     setTracks(prev => prev.map(t => {
         if (t.id === trackId) return { ...t, plays: t.plays + 1 };
         return t;
     }));
 
     try {
-        // 2. Increment DB Total Plays
         const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
         if (trackData) {
             await supabase.from('tracks').update({ plays: trackData.plays + 1 }).eq('id', trackId);
         }
-
-        // 3. Insert into History (for Charts & Uniqueness)
-        // If currentUser is null (guest), we can still record anonymous listen if we want, 
-        // but charts usually rely on user_id to deduplicate.
         if (currentUser) {
             await supabase.from('listen_history').insert({
                 track_id: trackId,
@@ -436,6 +439,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (updates.lastName) dbUpdates.last_name = updates.lastName;
     if (updates.bio) dbUpdates.bio = updates.bio;
     if (updates.photoUrl) dbUpdates.photo_url = updates.photoUrl;
+    if (updates.headerUrl) dbUpdates.header_url = updates.headerUrl; // Map headerUrl
     if (updates.links) dbUpdates.links = updates.links;
 
     try {
@@ -470,6 +474,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           firstName: profile.first_name,
           lastName: profile.last_name,
           photoUrl: profile.photo_url,
+          headerUrl: profile.header_url, // Map header_url from DB
           bio: profile.bio,
           links: profile.links || {},
           stats: { uploads: uploads || 0, likesReceived: likesReceived, totalPlays: totalPlays }
@@ -480,7 +485,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  // --- NEW CHART CALCULATION LOGIC ---
   const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => {
       try {
           const now = new Date();
@@ -488,9 +492,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (period === 'week') startDate.setDate(now.getDate() - 7);
           else startDate.setDate(now.getDate() - 30);
 
-          // 1. Fetch listening history for the period
-          // Note: In a high-scale app, this aggregation should happen on DB (RPC or View)
-          // For now, we fetch relevant rows and aggregate client-side
           const { data: history, error } = await supabase
             .from('listen_history')
             .select('track_id, user_id, played_at')
@@ -499,34 +500,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (error) throw error;
           if (!history || history.length === 0) return [];
 
-          // 2. Aggregate Unique Listens
-          // Logic: One unique listen per user per track per day is allowed
-          const scores: Record<string, number> = {};
-
-          history.forEach(record => {
-             const trackId = record.track_id;
-             const userId = record.user_id;
-             // Simple day string (YYYY-MM-DD)
-             const day = record.played_at.split('T')[0];
-             const key = `${trackId}-${userId}-${day}`;
-             
-             // We can optimize this by just counting distinct UserIDs per Track if the requirement 
-             // was just "unique per period". 
-             // But prompt says: "Unique listen per user per track per day".
-             // So if I listen on Monday and Tuesday, that counts as 2 unique listens for the Week chart.
-             
-             // We'll use a Set to track "User-Track-Day" combinations we've already counted
-             // Actually, simply counting the history rows might be wrong if we don't dedupe.
-             // But since we are calculating charts, let's create a map of TrackID -> Count
-          });
-
-          // Let's implement the specific rule:
-          // "Unique Play": Increments only once per user per track per day.
-          const uniquePlaysMap = new Set<string>(); // Stores "trackId_userId_date"
+          const uniquePlaysMap = new Set<string>();
           const trackScores: Record<string, number> = {};
 
           history.forEach(h => {
-              const dateKey = h.played_at.split('T')[0]; // YYYY-MM-DD
+              const dateKey = h.played_at.split('T')[0];
               const uniqueKey = `${h.track_id}_${h.user_id}_${dateKey}`;
               
               if (!uniquePlaysMap.has(uniqueKey)) {
@@ -535,16 +513,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               }
           });
 
-          // 3. Sort IDs by score
           const sortedTrackIds = Object.entries(trackScores)
               .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
-              .slice(0, 50) // Top 50
+              .slice(0, 50)
               .map(([id]) => id);
 
           if (sortedTrackIds.length === 0) return [];
 
-          // 4. Fetch full track details for these IDs
-          // Reuse the existing track fetching logic via a fresh query to ensure we get uploader details
           const { data: tracksData } = await supabase
             .from('tracks')
             .select(`*, profiles:uploader_id(username, photo_url)`)
@@ -552,11 +527,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
           if (!tracksData) return [];
 
-          // 5. Map and Re-sort (because .in() doesn't preserve order)
-          // We also need likes count for display
            const mappedChartTracks: Track[] = await Promise.all(tracksData.map(async (t: any) => {
-              // Basic minimal mapping for chart display
-              // We fetch likes count just for display, but sorting is determined by 'trackScores'
               const { count: likes } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).eq('track_id', t.id);
               
               return {
@@ -571,14 +542,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   audioUrl: t.audio_url,
                   duration: t.duration,
                   createdAt: t.created_at,
-                  plays: t.plays, // Show TOTAL plays
+                  plays: t.plays,
                   likes: likes || 0,
                   comments: [],
-                  isLikedByCurrentUser: false // Not critical for chart view
+                  isLikedByCurrentUser: false
               };
            }));
 
-           // Sort based on the calculated scores
            return mappedChartTracks.sort((a, b) => {
                const scoreA = trackScores[a.id] || 0;
                const scoreB = trackScores[b.id] || 0;
@@ -604,6 +574,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         addComment,
         recordListen,
         updateProfile,
+        uploadImage,
         fetchUserById,
         getChartTracks
       }

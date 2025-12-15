@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { ArrowLeft, Camera, Save, Globe } from '../components/ui/Icons';
+import { ArrowLeft, Camera, Save, Globe, Loader2, Image as ImageIcon } from '../components/ui/Icons';
 import { User } from '../types';
 
 interface SettingsProps {
@@ -8,8 +8,9 @@ interface SettingsProps {
 }
 
 const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
-  const { currentUser, updateProfile } = useStore();
+  const { currentUser, updateProfile, uploadImage } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const headerInputRef = useRef<HTMLInputElement>(null);
 
   // Form state
   const [firstName, setFirstName] = useState('');
@@ -21,7 +22,17 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
     soundcloud: '',
     other: ''
   });
+  
+  // Image State
   const [photoUrl, setPhotoUrl] = useState('');
+  const [headerUrl, setHeaderUrl] = useState('');
+  
+  // File State
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [headerFile, setHeaderFile] = useState<File | null>(null);
+  
+  // Saving State
+  const [isSaving, setIsSaving] = useState(false);
 
   // Initial load
   useEffect(() => {
@@ -36,27 +47,64 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
         other: currentUser.links?.other || ''
       });
       setPhotoUrl(currentUser.photoUrl || '');
+      setHeaderUrl(currentUser.headerUrl || '');
     }
   }, [currentUser]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      const url = URL.createObjectURL(file);
-      setPhotoUrl(url);
+      setAvatarFile(file);
+      setPhotoUrl(URL.createObjectURL(file)); // Preview
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleHeaderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setHeaderFile(file);
+      setHeaderUrl(URL.createObjectURL(file)); // Preview
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateProfile({
-      firstName,
-      lastName,
-      bio,
-      links,
-      photoUrl
-    });
-    onBack();
+    if (!currentUser) return;
+    
+    setIsSaving(true);
+    try {
+        let finalPhotoUrl = photoUrl;
+        let finalHeaderUrl = headerUrl;
+
+        // 1. Upload Avatar if changed
+        if (avatarFile) {
+            const path = `avatars/${currentUser.id}/${Date.now()}_avatar`;
+            finalPhotoUrl = await uploadImage(avatarFile, 'music', path);
+        }
+
+        // 2. Upload Header if changed
+        if (headerFile) {
+            const path = `headers/${currentUser.id}/${Date.now()}_header`;
+            finalHeaderUrl = await uploadImage(headerFile, 'music', path);
+        }
+
+        // 3. Update Profile
+        await updateProfile({
+          firstName,
+          lastName,
+          bio,
+          links,
+          photoUrl: finalPhotoUrl,
+          headerUrl: finalHeaderUrl
+        });
+        
+        onBack();
+    } catch (err) {
+        console.error("Failed to save profile:", err);
+        alert("Failed to save changes. Please try again.");
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   return (
@@ -72,33 +120,66 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
       <div className="p-4 max-w-lg mx-auto">
         <form onSubmit={handleSave} className="space-y-8">
           
-          {/* Avatar Section */}
-          <div className="flex flex-col items-center">
-            <div 
-              onClick={() => fileInputRef.current?.click()}
-              className="relative w-28 h-28 rounded-full bg-zinc-800 border-4 border-zinc-900 shadow-xl overflow-hidden cursor-pointer group"
-            >
-              {photoUrl ? (
-                <img src={photoUrl} alt="avatar" className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-violet-600 text-3xl font-bold">
-                   {currentUser?.username?.[0]?.toUpperCase() || 'U'}
-                </div>
-              )}
-              
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Camera size={32} className="text-white drop-shadow-md" />
+          {/* Images Section */}
+          <div className="space-y-4">
+              {/* Header Image */}
+              <div>
+                  <label className="block text-xs text-zinc-400 mb-2">Profile Header</label>
+                  <div 
+                    onClick={() => headerInputRef.current?.click()}
+                    className="w-full h-32 rounded-xl bg-zinc-900 border-2 border-dashed border-zinc-800 hover:border-violet-500 cursor-pointer relative overflow-hidden group transition-colors"
+                  >
+                      {headerUrl ? (
+                          <>
+                            <img src={headerUrl} alt="Header" className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity" />
+                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                                <ImageIcon size={24} className="text-white" />
+                            </div>
+                          </>
+                      ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-600 gap-2">
+                              <ImageIcon size={20} />
+                              <span className="text-xs">Add Header Image</span>
+                          </div>
+                      )}
+                      <input 
+                        ref={headerInputRef} 
+                        type="file" 
+                        accept="image/*" 
+                        className="hidden" 
+                        onChange={handleHeaderChange} 
+                      />
+                  </div>
               </div>
-              
-              <input 
-                ref={fileInputRef} 
-                type="file" 
-                accept="image/*" 
-                className="hidden" 
-                onChange={handleFileChange} 
-              />
-            </div>
-            <p className="mt-2 text-xs text-zinc-500">Tap to change photo</p>
+
+              {/* Avatar - Centered and overlapping if possible, but keep simple layout for now */}
+              <div className="flex flex-col items-center -mt-8 relative z-10">
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative w-28 h-28 rounded-full bg-zinc-800 border-4 border-zinc-950 shadow-xl overflow-hidden cursor-pointer group"
+                >
+                  {photoUrl ? (
+                    <img src={photoUrl} alt="avatar" className="w-full h-full object-cover opacity-100 group-hover:opacity-80 transition-opacity" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-violet-600 text-3xl font-bold">
+                       {currentUser?.username?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
+                    <Camera size={24} className="text-white drop-shadow-md" />
+                  </div>
+                  
+                  <input 
+                    ref={fileInputRef} 
+                    type="file" 
+                    accept="image/*" 
+                    className="hidden" 
+                    onChange={handleAvatarChange} 
+                  />
+                </div>
+                <p className="mt-2 text-xs text-zinc-500">Tap avatar to change</p>
+              </div>
           </div>
 
           {/* Basic Info */}
@@ -202,10 +283,18 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
 
           <button 
             type="submit" 
-            className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-violet-900/20 transition-all"
+            disabled={isSaving}
+            className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-violet-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Save size={18} />
-            Save Changes
+            {isSaving ? (
+                <>
+                    <Loader2 className="animate-spin" size={18} /> Saving...
+                </>
+            ) : (
+                <>
+                    <Save size={18} /> Save Changes
+                </>
+            )}
           </button>
 
         </form>

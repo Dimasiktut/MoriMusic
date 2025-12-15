@@ -107,6 +107,7 @@ const MainLayout: React.FC = () => {
         <AudioPlayer 
             track={currentTrack} 
             onClose={() => setCurrentTrack(null)} 
+            onOpenProfile={handleOpenProfile}
         />
 
         {/* Bottom Nav - Hide if in overlay mode */}

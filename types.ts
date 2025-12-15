@@ -4,6 +4,7 @@ export interface User {
   firstName?: string;
   lastName?: string;
   photoUrl?: string;
+  headerUrl?: string; // Background banner for profile
   bio?: string;
   links: {
     yandex?: string;

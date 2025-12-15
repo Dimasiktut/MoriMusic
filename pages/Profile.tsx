@@ -53,7 +53,15 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   return (
     <div className="pb-32 animate-in fade-in slide-in-from-bottom-4 duration-300">
        {/* Header / Cover */}
-       <div className="h-40 bg-gradient-to-b from-zinc-800 to-black relative">
+       <div className="h-40 bg-zinc-900 relative overflow-hidden">
+           {profileUser.headerUrl ? (
+               <img src={profileUser.headerUrl} alt="header" className="w-full h-full object-cover" />
+           ) : (
+               <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black" />
+           )}
+           
+           <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+
            {onBack && (
                <button 
                  onClick={onBack}

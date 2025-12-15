@@ -8,9 +8,10 @@ interface AudioPlayerProps {
   onClose: () => void;
   onNext?: () => void;
   onPrev?: () => void;
+  onOpenProfile?: (userId: number) => void;
 }
 
-const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
+const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile }) => {
   const { recordListen } = useStore();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -50,10 +51,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
       setDuration(total);
 
       // --- LISTEN COUNTING LOGIC ---
-      // 1. Check if we haven't counted this session yet
-      // 2. Check if total duration is valid
-      // 3. Condition A: Played > 30 seconds
-      // 4. Condition B: Played > 30% of track
       if (!hasCountedListen && total > 0 && track) {
           const playedLongEnough = current > 30;
           const playedSignificantPortion = (current / total) > 0.30;
@@ -61,7 +58,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
           if (playedLongEnough || playedSignificantPortion) {
               setHasCountedListen(true);
               recordListen(track.id);
-              // console.log("Listen recorded for:", track.title);
           }
       }
     }
@@ -105,7 +101,15 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
             </div>
             <div className="flex flex-col overflow-hidden">
                 <span className="text-sm font-semibold text-white truncate">{track.title}</span>
-                <span className="text-xs text-zinc-400 truncate">{track.uploaderName}</span>
+                <span 
+                    className="text-xs text-zinc-400 truncate hover:text-violet-400 cursor-pointer transition-colors"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenProfile && onOpenProfile(track.uploaderId);
+                    }}
+                >
+                    {track.uploaderName}
+                </span>
             </div>
           </div>
 
