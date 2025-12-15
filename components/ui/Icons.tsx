@@ -21,7 +21,9 @@ import {
   Globe,
   ExternalLink,
   Search,
-  Trash2
+  Trash2,
+  Loader2,
+  Image
 } from 'lucide-react';
 
 export {
@@ -47,5 +49,7 @@ export {
   Globe,
   ExternalLink,
   Search,
-  Trash2
+  Trash2,
+  Loader2,
+  Image
 };
