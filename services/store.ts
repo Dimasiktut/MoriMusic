@@ -46,7 +46,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      if (!tracksData) return;
+      
+      if (!tracksData) {
+         setTracks([]);
+         return;
+      }
 
       // 2. Get Likes for current user (to set isLikedByCurrentUser)
       let userLikes: string[] = [];
@@ -59,25 +63,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (likesData) userLikes = likesData.map(l => l.track_id);
       }
 
-      // 3. Get Comments counts or latest comments (simplified for now: empty array or separate fetch)
-      // For performance, we usually fetch comments on demand, but let's just leave empty for feed
-      // and update the Track type mapping.
-
-      // Map DB response to UI Track type
+      // 3. Map DB response to UI Track type
       const mappedTracks: Track[] = await Promise.all(tracksData.map(async (t: any) => {
-         // Get real comment count or comments
-         const { data: commentsData } = await supabase
-            .from('comments')
-            .select('*')
-            .eq('track_id', t.id)
-            .order('created_at', { ascending: false })
-            .limit(3);
+         let comments: Comment[] = [];
+         let likesCount = 0;
 
-         // Get like count
-         const { count: likesCount } = await supabase
-            .from('track_likes')
-            .select('*', { count: 'exact', head: true })
-            .eq('track_id', t.id);
+         try {
+             // Get latest 3 comments
+             const { data: commentsData } = await supabase
+                .from('comments')
+                .select('*')
+                .eq('track_id', t.id)
+                .order('created_at', { ascending: false })
+                .limit(3);
+             if (commentsData) comments = commentsData;
+
+             // Get like count
+             const { count } = await supabase
+                .from('track_likes')
+                .select('*', { count: 'exact', head: true })
+                .eq('track_id', t.id);
+             if (count !== null) likesCount = count;
+         } catch (innerErr) {
+             console.warn(`Error fetching details for track ${t.id}`, innerErr);
+         }
 
          return {
           id: t.id,
@@ -92,16 +101,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           duration: t.duration,
           createdAt: t.created_at,
           plays: t.plays,
-          likes: likesCount || 0,
-          comments: commentsData || [],
+          likes: likesCount,
+          comments: comments,
           isLikedByCurrentUser: userLikes.includes(t.id),
         };
       }));
 
       setTracks(mappedTracks);
 
-    } catch (e) {
-      console.error("Error fetching tracks:", e);
+    } catch (e: any) {
+      console.error("Error fetching tracks:", JSON.stringify(e, null, 2));
+      setTracks([]); // Empty state on error
     }
   }, []);
 
@@ -124,8 +134,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             .single();
 
           if (profile) {
-            // Calculate stats dynamically or rely on stored jsonb
-            // For simplicity, we construct the User object
             setCurrentUser({
               id: profile.id,
               username: profile.username,
@@ -134,13 +142,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               photoUrl: profile.photo_url,
               bio: profile.bio,
               links: profile.links || {},
-              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 } // Todo: implement real stats aggregation
+              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }
             });
-          } else if (!error) { 
-             // Error might mean row not found, or network error. 
-             // If connection is working but user not found, create new.
-             // If error is connection, we might skip this.
-             // However, for simplicity, let's try insert.
+          } else if (error && error.code === 'PGRST116') { 
+             // Error PGRST116 is "Row not found", so we insert.
             const newUser = {
               id: userId,
               username: tgUser.username || `user_${userId}`,
@@ -149,26 +154,29 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               photo_url: tgUser.photo_url,
             };
             
-            await supabase.from('profiles').insert(newUser);
-            setCurrentUser({
-              ...INITIAL_USER,
-              id: userId,
-              username: newUser.username,
-              firstName: newUser.first_name,
-              photoUrl: newUser.photo_url
-            });
+            const { error: insertError } = await supabase.from('profiles').insert(newUser);
+            if (!insertError) {
+                setCurrentUser({
+                ...INITIAL_USER,
+                id: userId,
+                username: newUser.username,
+                firstName: newUser.first_name,
+                photoUrl: newUser.photo_url
+                });
+            } else {
+                 console.warn("Failed to create profile.", insertError);
+                 setCurrentUser(null);
+            }
           } else {
-             console.warn("Could not fetch profile, using mock/initial", error);
-             // If DB is down or disconnected, we might want fallback?
-             // Proceeding with mock/initial to avoid empty state
-             setCurrentUser(INITIAL_USER);
-             userId = INITIAL_USER.id;
+             // Other errors (e.g. table missing)
+             console.warn("Could not fetch profile.", error);
+             setCurrentUser(null);
           }
         } else {
-          // Dev mode fallback
-          console.warn("No Telegram User detected. Using Mock/Dev mode might fail with DB RLS.");
-          setCurrentUser(INITIAL_USER);
-          userId = INITIAL_USER.id;
+          // Dev mode or non-Telegram environment
+          console.warn("No Telegram User detected.");
+          // We do not load a mock user anymore.
+          setCurrentUser(null);
         }
 
         await fetchTracks(userId);
@@ -179,8 +187,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         window.Telegram?.WebApp?.ready();
       } catch (e) {
         console.error("App initialization failed", e);
-        // Fallback in case of critical error
-        setCurrentUser(INITIAL_USER);
+        setCurrentUser(null);
+        setTracks([]);
       } finally {
         setIsLoading(false);
       }
@@ -236,7 +244,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     } catch (e) {
         console.error("Upload failed", e);
-        alert("Upload failed. Check console for details (often DB permissions or missing keys).");
+        alert("Upload failed. Check console. (Likely Storage bucket 'music' missing or RLS policy blocking)");
     } finally {
         setIsLoading(false);
     }
@@ -258,39 +266,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return t;
     }));
 
-    // DB Update
-    const { data: existingLike } = await supabase
-        .from('track_likes')
-        .select('*')
-        .eq('user_id', currentUser.id)
-        .eq('track_id', trackId)
-        .single();
+    try {
+        // DB Update
+        const { data: existingLike } = await supabase
+            .from('track_likes')
+            .select('*')
+            .eq('user_id', currentUser.id)
+            .eq('track_id', trackId)
+            .single();
 
-    if (existingLike) {
-        await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
-    } else {
-        await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+        if (existingLike) {
+            await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+        } else {
+            await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+        }
+    } catch (e) {
+        console.error("Error toggling like", e);
     }
   }, [currentUser]);
 
   const addComment = useCallback(async (trackId: string, text: string) => {
     if (!currentUser) return;
 
-    const { data, error } = await supabase.from('comments').insert({
-        track_id: trackId,
-        user_id: currentUser.id,
-        username: currentUser.username,
-        avatar: currentUser.photoUrl,
-        text: text
-    }).select().single();
+    try {
+        const { data, error } = await supabase.from('comments').insert({
+            track_id: trackId,
+            user_id: currentUser.id,
+            username: currentUser.username,
+            avatar: currentUser.photoUrl,
+            text: text
+        }).select().single();
+        
+        if (error) throw error;
 
-    if (data) {
-        setTracks(prev => prev.map(t => {
-            if (t.id === trackId) {
-                return { ...t, comments: [data, ...t.comments] };
-            }
-            return t;
-        }));
+        if (data) {
+            setTracks(prev => prev.map(t => {
+                if (t.id === trackId) {
+                    return { ...t, comments: [data, ...t.comments] };
+                }
+                return t;
+            }));
+        }
+    } catch (e) {
+        console.error("Error adding comment", e);
+        // Removed fake local comment fallback
     }
   }, [currentUser]);
 
@@ -301,17 +320,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return t;
     }));
 
-    // RPC call is better for atomicity, but simple update works for prototype
-    // Need an RPC function `increment_plays` in Supabase ideally
-    // For now, let's just ignore the race condition or do a direct RPC call if setup
-    // await supabase.rpc('increment_plays', { row_id: trackId });
-    
-    // Fallback: fetch, increment, update (not safe for high concurrency)
-    const { data } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-    if (data) {
-        await supabase.from('tracks').update({ plays: data.plays + 1 }).eq('id', trackId);
+    try {
+        const { data } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+        if (data) {
+            await supabase.from('tracks').update({ plays: data.plays + 1 }).eq('id', trackId);
+        }
+    } catch (e) {
+        console.warn("Failed to update play count in DB", e);
     }
-
   }, []);
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
@@ -325,10 +341,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (updates.photoUrl) dbUpdates.photo_url = updates.photoUrl;
     if (updates.links) dbUpdates.links = updates.links;
 
-    const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', currentUser.id);
-
-    if (!error) {
+    try {
+        const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', currentUser.id);
+        if (error) throw error;
         setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+    } catch (e) {
+        console.error("Profile update failed", e);
     }
   }, [currentUser]);
 
