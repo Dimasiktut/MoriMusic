@@ -31,7 +31,9 @@ import {
   Clock,
   ListMusic,
   Layers,
-  Plus
+  Plus,
+  Download,
+  Bookmark
 } from 'lucide-react';
 
 export {
@@ -67,5 +69,7 @@ export {
   Clock,
   ListMusic,
   Layers,
-  Plus
+  Plus,
+  Download,
+  Bookmark
 };

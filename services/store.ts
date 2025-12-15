@@ -18,6 +18,7 @@ interface StoreContextType {
   currentUser: User | null;
   tracks: Track[];
   myPlaylists: Playlist[]; 
+  savedPlaylists: Playlist[];
   isLoading: boolean;
   language: Language;
   setLanguage: (lang: Language) => void;
@@ -27,8 +28,11 @@ interface StoreContextType {
   createPlaylist: (title: string) => Promise<void>;
   addToPlaylist: (trackId: string, playlistId: string) => Promise<void>;
   fetchUserPlaylists: (userId: number) => Promise<Playlist[]>;
+  fetchSavedPlaylists: (userId: number) => Promise<Playlist[]>;
+  toggleSavePlaylist: (playlistId: string) => Promise<void>;
   fetchPlaylistTracks: (playlistId: string) => Promise<Track[]>;
   deleteTrack: (trackId: string) => Promise<void>;
+  downloadTrack: (track: Track) => Promise<void>;
   toggleLike: (trackId: string) => Promise<void>;
   addComment: (trackId: string, text: string) => Promise<void>;
   recordListen: (trackId: string) => Promise<void>;
@@ -46,6 +50,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
+  const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
   const [language, setLanguageState] = useState<Language>(() => {
@@ -152,16 +157,46 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           
           if(error) throw error;
           
-          return data.map((p: any) => ({
-              id: p.id,
-              userId: p.user_id,
-              title: p.title,
-              coverUrl: p.cover_url,
-              createdAt: p.created_at,
+          return (data || []).map((item: any) => ({
+              id: item.id,
+              userId: item.user_id,
+              title: item.title,
+              coverUrl: item.cover_url,
+              createdAt: item.created_at,
               trackCount: 0 
           }));
       } catch (e) {
           console.warn("Fetch playlists error (table might not exist yet)", e);
+          return [];
+      }
+  }, []);
+
+  const fetchSavedPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
+      try {
+          // Assuming 'saved_playlists' table exists: id, user_id, playlist_id
+          const { data, error } = await supabase
+              .from('saved_playlists')
+              .select('playlist_id, playlists:playlist_id(*)')
+              .eq('user_id', userId);
+
+          if (error) throw error;
+
+          // @ts-ignore
+          return (data || []).map(item => {
+              const p = item.playlists;
+              if (!p) return null;
+              return {
+                  id: p.id,
+                  userId: p.user_id,
+                  title: p.title,
+                  coverUrl: p.cover_url,
+                  createdAt: p.created_at,
+                  trackCount: 0
+              };
+          }).filter(Boolean) as Playlist[];
+
+      } catch (e) {
+          console.warn("Fetch saved playlists error (table might missing)", e);
           return [];
       }
   }, []);
@@ -213,6 +248,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   }, [currentUser, fetchUserPlaylists]);
 
+  const toggleSavePlaylist = useCallback(async (playlistId: string) => {
+      if (!currentUser) return;
+      
+      const isAlreadySaved = savedPlaylists.some(p => p.id === playlistId);
+      
+      try {
+          if (isAlreadySaved) {
+              const { error } = await supabase.from('saved_playlists')
+                  .delete()
+                  .eq('user_id', currentUser.id)
+                  .eq('playlist_id', playlistId);
+              if (error) throw error;
+              setSavedPlaylists(prev => prev.filter(p => p.id !== playlistId));
+          } else {
+              const { error } = await supabase.from('saved_playlists')
+                  .insert({ user_id: currentUser.id, playlist_id: playlistId });
+              if (error) throw error;
+              // Ideally fetch the playlist details to add to state, or re-fetch all
+              const updated = await fetchSavedPlaylists(currentUser.id);
+              setSavedPlaylists(updated);
+          }
+      } catch (e) {
+          console.error("Toggle save playlist error", e);
+      }
+  }, [currentUser, savedPlaylists, fetchSavedPlaylists]);
+
   const addToPlaylist = useCallback(async (trackId: string, playlistId: string) => {
       if(!currentUser) return;
       try {
@@ -258,6 +319,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
             const playlists = await fetchUserPlaylists(userId);
             setMyPlaylists(playlists);
+            
+            const saved = await fetchSavedPlaylists(userId);
+            setSavedPlaylists(saved);
           } else {
              setCurrentUser({
                 ...INITIAL_USER,
@@ -282,7 +346,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     };
     initApp();
-  }, [fetchTracks, fetchUserPlaylists]);
+  }, [fetchTracks, fetchUserPlaylists, fetchSavedPlaylists]);
 
   const checkGroupMembership = async (userId: number): Promise<boolean> => {
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return true; 
@@ -440,6 +504,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
+  const downloadTrack = useCallback(async (track: Track) => {
+    try {
+        const response = await fetch(track.audioUrl);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${track.uploaderName} - ${track.title}.mp3`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error("Download failed", e);
+        alert("Failed to download track.");
+    }
+  }, []);
+
   const toggleLike = useCallback(async (trackId: string) => {
       if (!currentUser) return;
       setTracks(prev => prev.map(t => {
@@ -551,6 +633,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         currentUser,
         tracks,
         myPlaylists,
+        savedPlaylists,
         isLoading,
         language,
         setLanguage,
@@ -560,8 +643,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createPlaylist,
         addToPlaylist,
         fetchUserPlaylists,
+        fetchSavedPlaylists,
+        toggleSavePlaylist,
         fetchPlaylistTracks,
         deleteTrack,
+        downloadTrack,
         toggleLike,
         addComment,
         recordListen,

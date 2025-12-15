@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2 } from '../components/ui/Icons';
+import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
@@ -13,7 +13,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, fetchPlaylistTracks, createPlaylist, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, fetchSavedPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
@@ -130,6 +130,9 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
 
   // --- RENDER PLAYLIST VIEW ---
   if (selectedPlaylist) {
+      const isSaved = savedPlaylists.some(p => p.id === selectedPlaylist.id);
+      const isOwner = currentUser?.id === selectedPlaylist.userId;
+
       return (
           <div className="pb-32 min-h-screen bg-zinc-950 animate-in slide-in-from-right-4 duration-300">
               {/* Playlist Header */}
@@ -149,6 +152,18 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                       </button>
                   </div>
 
+                  {/* Save Button for non-owners */}
+                  {!isOwner && currentUser && (
+                       <div className="absolute top-4 right-4 z-20">
+                           <button 
+                             onClick={() => toggleSavePlaylist(selectedPlaylist.id)}
+                             className={`p-2 rounded-full backdrop-blur-md transition-all flex items-center gap-2 ${isSaved ? 'bg-violet-600 text-white' : 'bg-black/30 hover:bg-black/50 text-white'}`}
+                           >
+                               <Bookmark size={20} fill={isSaved ? "currentColor" : "none"} />
+                           </button>
+                       </div>
+                  )}
+
                   <div className="absolute bottom-4 left-4 right-4 flex items-end gap-4 z-10">
                       <div className="w-24 h-24 rounded-lg bg-zinc-800 shadow-2xl flex-shrink-0 overflow-hidden border border-white/10">
                           {selectedPlaylist.coverUrl ? (
@@ -161,7 +176,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                       </div>
                       <div className="mb-1">
                           <h2 className="text-2xl font-bold text-white leading-tight">{selectedPlaylist.title}</h2>
-                          <p className="text-sm text-zinc-400">{profileUser.username}</p>
+                          <p className="text-sm text-zinc-400">{isOwner ? t('profile_my_tracks') : selectedPlaylist.userId}</p>
                       </div>
                   </div>
               </div>
@@ -322,35 +337,71 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                )}
 
                {activeTab === 'playlists' && (
-                    <div>
-                        {isOwnProfile && (
-                            <button onClick={() => setShowCreatePlaylist(true)} className="w-full mb-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 border-dashed rounded-xl text-zinc-400 hover:text-white transition-colors flex items-center justify-center gap-2 text-sm font-medium">
-                                <Plus size={18} />{t('profile_create_playlist')}
-                            </button>
-                        )}
-                        {loadingPlaylists ? (
-                            <div className="space-y-3"><div className="h-16 bg-zinc-900 rounded-xl animate-pulse" /></div>
-                        ) : playlists.length > 0 ? (
-                            <div className="grid grid-cols-2 gap-3">
-                                {playlists.map(p => (
-                                    <div 
-                                        key={p.id} 
-                                        onClick={() => handleOpenPlaylist(p)}
-                                        className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors"
-                                    >
-                                        <div className="aspect-square bg-zinc-800 relative">
-                                            {p.coverUrl ? (
-                                                <img src={p.coverUrl} className="w-full h-full object-cover" alt={p.title} />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-zinc-600"><ListMusic size={32} /></div>
-                                            )}
+                    <div className="space-y-6">
+                        {/* My Playlists */}
+                        <div>
+                            {isOwnProfile && (
+                                <button onClick={() => setShowCreatePlaylist(true)} className="w-full mb-4 py-3 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 border-dashed rounded-xl text-zinc-400 hover:text-white transition-colors flex items-center justify-center gap-2 text-sm font-medium">
+                                    <Plus size={18} />{t('profile_create_playlist')}
+                                </button>
+                            )}
+                            
+                            <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">{t('profile_playlists')}</h4>
+                            
+                            {loadingPlaylists ? (
+                                <div className="space-y-3"><div className="h-16 bg-zinc-900 rounded-xl animate-pulse" /></div>
+                            ) : playlists.length > 0 ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                    {playlists.map(p => (
+                                        <div 
+                                            key={p.id} 
+                                            onClick={() => handleOpenPlaylist(p)}
+                                            className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors"
+                                        >
+                                            <div className="aspect-square bg-zinc-800 relative">
+                                                {p.coverUrl ? (
+                                                    <img src={p.coverUrl} className="w-full h-full object-cover" alt={p.title} />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-zinc-600"><ListMusic size={32} /></div>
+                                                )}
+                                            </div>
+                                            <div className="p-3"><h4 className="text-white text-sm font-bold truncate">{p.title}</h4></div>
                                         </div>
-                                        <div className="p-3"><h4 className="text-white text-sm font-bold truncate">{p.title}</h4></div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="text-center py-4 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">{t('profile_no_playlists')}</p></div>
+                            )}
+                        </div>
+
+                        {/* Saved Playlists (Only visible on own profile) */}
+                        {isOwnProfile && (
+                            <div>
+                                <h4 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">{t('profile_saved_playlists')}</h4>
+                                {savedPlaylists.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {savedPlaylists.map(p => (
+                                            <div 
+                                                key={p.id} 
+                                                onClick={() => handleOpenPlaylist(p)}
+                                                className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors"
+                                            >
+                                                <div className="aspect-square bg-zinc-800 relative">
+                                                    {p.coverUrl ? (
+                                                        <img src={p.coverUrl} className="w-full h-full object-cover" alt={p.title} />
+                                                    ) : (
+                                                        <div className="w-full h-full flex items-center justify-center text-zinc-600"><ListMusic size={32} /></div>
+                                                    )}
+                                                    <div className="absolute top-2 right-2 bg-black/60 rounded-full p-1"><Bookmark size={12} className="text-violet-400" fill="currentColor"/></div>
+                                                </div>
+                                                <div className="p-3"><h4 className="text-white text-sm font-bold truncate">{p.title}</h4></div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                ) : (
+                                    <div className="text-center py-4 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">{t('profile_no_saved_playlists')}</p></div>
+                                )}
                             </div>
-                        ) : (
-                            <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800"><p className="text-zinc-500 text-sm">{t('profile_no_playlists')}</p></div>
                         )}
                     </div>
                )}

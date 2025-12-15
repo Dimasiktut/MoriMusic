@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link, BadgeCheck, ListMusic } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link, BadgeCheck, ListMusic, Download } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -11,7 +11,7 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, addComment, deleteTrack, addToPlaylist, myPlaylists, t, language } = useStore();
+  const { currentUser, toggleLike, addComment, deleteTrack, downloadTrack, addToPlaylist, myPlaylists, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   
@@ -21,6 +21,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
   const [isCopied, setIsCopied] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -57,6 +58,14 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     setShowMenu(false);
   };
   
+  const handleDownload = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setIsDownloading(true);
+      await downloadTrack(track);
+      setIsDownloading(false);
+      setShowMenu(false);
+  };
+
   const handleAddToPlaylist = async (e: React.MouseEvent, playlistId: string) => {
       e.stopPropagation();
       await addToPlaylist(track.id, playlistId);
@@ -129,6 +138,9 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                                      <button onClick={handleShare} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
                                         {isCopied ? <Check size={12} className="text-green-500"/> : <Link size={12} />}
                                         {isCopied ? t('track_copied') : t('track_share')}
+                                     </button>
+                                     <button onClick={handleDownload} disabled={isDownloading} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50">
+                                        <Download size={12} /> {isDownloading ? t('track_downloading') : t('track_download')}
                                      </button>
                                      <button onClick={(e) => { e.stopPropagation(); setViewPlaylistMenu(true); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
                                         <ListMusic size={12} /> {t('track_add_playlist')}
