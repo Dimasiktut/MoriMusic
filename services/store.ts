@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment } from '../types';
-import { INITIAL_USER } from '../constants';
+import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_GROUP_LINK } from '../constants';
 import { supabase } from './supabase';
 
 interface UploadTrackData {
@@ -205,17 +205,76 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initApp();
   }, [fetchTracks]);
 
+  // --- TELEGRAM MEMBERSHIP CHECKER ---
+  const checkGroupMembership = async (userId: number): Promise<boolean> => {
+    // If no config, assume dev mode or open access
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+        console.warn("Telegram Bot Token or Chat ID not set in constants.ts. Skipping membership check.");
+        return true; 
+    }
+
+    try {
+        const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}`;
+        
+        // We MUST use a CORS proxy because browsers block direct calls to Telegram API
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(telegramUrl)}`;
+
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+
+        if (!data.ok) {
+            console.error("Telegram API Error:", data.description);
+            // If error (e.g. bot not admin), we deny access to be safe, or check description
+            return false;
+        }
+
+        const status = data.result.status;
+        // Allowed statuses
+        const allowed = ['creator', 'administrator', 'member', 'restricted'];
+        
+        return allowed.includes(status);
+    } catch (error) {
+        console.error("Failed to verify membership:", error);
+        return false;
+    }
+  };
+
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
 
     try {
         setIsLoading(true);
 
+        // 1. CHECK MEMBERSHIP
+        const isMember = await checkGroupMembership(currentUser.id);
+        
+        if (!isMember) {
+            // Check if tokens are even set
+            if (!TELEGRAM_BOT_TOKEN) {
+                alert("Ошибка конфигурации: TELEGRAM_BOT_TOKEN не установлен в коде.");
+                return;
+            }
+
+            // Show UI Alert with Link
+            const shouldJoin = confirm(
+                `🔒 Доступ запрещен\n\nЧтобы загружать треки, вы должны быть подписаны на наш канал ${TELEGRAM_CHAT_ID}.\n\nПодписаться сейчас?`
+            );
+            if (shouldJoin) {
+                // @ts-ignore
+                if (window.Telegram?.WebApp?.openTelegramLink) {
+                    // @ts-ignore
+                    window.Telegram.WebApp.openTelegramLink(TELEGRAM_GROUP_LINK);
+                } else {
+                    window.open(TELEGRAM_GROUP_LINK, '_blank');
+                }
+            }
+            return; // Stop upload
+        }
+
+        // --- PROCEED WITH UPLOAD ---
         const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
 
-        // 1. Attempt to resolve a Storage Owner ID
-        // Try to get the Authenticated Supabase User ID (UUID).
-        // If that fails (e.g. Anon Auth disabled), fall back to Telegram ID.
+        // 2. Attempt to resolve a Storage Owner ID
         let storageOwnerId: string | undefined;
 
         try {
@@ -234,11 +293,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             console.warn("Auth check failed, using fallback.", authErr);
         }
 
-        // If we have a UUID from Supabase, use it (better for RLS). 
-        // If not, use the Telegram ID (requires Public bucket policy).
         const uploadPathOwner = storageOwnerId || currentUser.id.toString();
 
-        // 2. Upload Audio
+        // 3. Upload Audio
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
         const audioPath = `audio/${uploadPathOwner}/${audioName}`;
         
@@ -252,7 +309,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
 
-        // 3. Upload Cover (if exists)
+        // 4. Upload Cover (if exists)
         let coverUrl = 'https://picsum.photos/400/400?random=default';
         if (data.coverFile) {
             const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
@@ -270,8 +327,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             }
         }
 
-        // 4. Insert Track Record
-        // We always use currentUser.id (Telegram ID) for the database relation
+        // 5. Insert Track Record
         const { error: dbError } = await supabase.from('tracks').insert({
             uploader_id: currentUser.id,
             title: data.title,

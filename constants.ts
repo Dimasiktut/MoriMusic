@@ -20,3 +20,13 @@ export const INITIAL_USER: User = {
     totalPlays: 0,
   },
 };
+
+// --- TELEGRAM GROUP CONFIGURATION ---
+// ВАЖНО: Вставьте сюда токен от @morimusics_bot (получить у @BotFather)
+export const TELEGRAM_BOT_TOKEN = '8597639400:AAGg76KAn5onhXZGLaWQx6jDJbaBah4emBg'; 
+
+// ID канала или группы для проверки подписки
+export const TELEGRAM_CHAT_ID = '@clan_mori'; 
+
+// Ссылка, которая откроется, если пользователь не подписан
+export const TELEGRAM_GROUP_LINK = 'https://t.me/clan_mori';
