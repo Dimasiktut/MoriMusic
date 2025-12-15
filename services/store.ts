@@ -92,10 +92,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 .select('*', { count: 'exact', head: true })
                 .eq('track_id', t.id);
              if (count !== null) likesCount = count;
-             
-             // Optimization: In a real app, 'isVerified' should be a column on the 'profiles' table.
-             // Here we just mock it true for demo purposes if plays > 1000 on the track itself as a heuristic
-             // or fetch profile stats if critical.
          } catch (innerErr) {
              console.warn(`Error fetching details for track ${t.id}`, innerErr);
          }
@@ -507,23 +503,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [currentUser]);
 
   const recordListen = useCallback(async (trackId: string) => {
-    setTracks(prev => prev.map(t => {
-        if (t.id === trackId) return { ...t, plays: t.plays + 1 };
-        return t;
-    }));
+    if (!currentUser) return;
 
     try {
-        const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-        if (trackData) {
-            await supabase.from('tracks').update({ plays: trackData.plays + 1 }).eq('id', trackId);
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0]; // UTC date YYYY-MM-DD
+
+        // Check if we have a listen for this track today
+        const { count } = await supabase
+            .from('listen_history')
+            .select('*', { count: 'exact', head: true })
+            .eq('user_id', currentUser.id)
+            .eq('track_id', trackId)
+            .gte('played_at', `${todayStr}T00:00:00.000Z`);
+
+        const alreadyCountedToday = count !== null && count > 0;
+
+        if (!alreadyCountedToday) {
+            // Update DB count
+            const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+            if (trackData) {
+                await supabase.from('tracks').update({ plays: trackData.plays + 1 }).eq('id', trackId);
+            }
+            
+            // Update Local State
+            setTracks(prev => prev.map(t => {
+                if (t.id === trackId) return { ...t, plays: t.plays + 1 };
+                return t;
+            }));
         }
-        if (currentUser) {
-            await supabase.from('listen_history').insert({
-                track_id: trackId,
-                user_id: currentUser.id,
-                played_at: new Date().toISOString()
-            });
-        }
+
+        // Always insert into history (so it appears in "History" tab as recently played)
+        // This is safe because chart logic de-duplicates by day.
+        await supabase.from('listen_history').insert({
+            track_id: trackId,
+            user_id: currentUser.id,
+            played_at: now.toISOString()
+        });
+
     } catch (e) {
         console.warn("Failed to record listen", e);
     }

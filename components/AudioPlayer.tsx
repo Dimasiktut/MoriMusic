@@ -49,11 +49,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
       setProgress((current / total) * 100);
 
       // --- LISTEN COUNTING LOGIC ---
+      // Track a listen only if played for more than 40 seconds
       if (!hasCountedListen && total > 0 && track) {
-          const playedLongEnough = current > 30;
-          const playedSignificantPortion = (current / total) > 0.30;
-
-          if (playedLongEnough || playedSignificantPortion) {
+          const playedLongEnough = current > 40;
+          
+          if (playedLongEnough) {
               setHasCountedListen(true);
               recordListen(track.id);
           }
@@ -66,8 +66,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
   return (
     <div className="fixed bottom-[80px] left-0 right-0 px-4 pb-2 z-40">
       <div className="bg-zinc-900/90 backdrop-blur-md border border-white/10 rounded-xl p-3 shadow-2xl flex flex-col gap-2 relative overflow-hidden">
-        
-        {/* Subtle Visualizer Background (Optional, or placed near controls) */}
         
         {/* Progress Bar */}
         <div className="w-full bg-zinc-800 h-1 rounded-full overflow-hidden cursor-pointer relative z-10" 
