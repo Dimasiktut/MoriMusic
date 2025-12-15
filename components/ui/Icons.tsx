@@ -27,7 +27,8 @@ import {
   Check,
   Link,
   BadgeCheck,
-  Activity
+  Activity,
+  Clock
 } from 'lucide-react';
 
 export {
@@ -59,5 +60,6 @@ export {
   Check,
   Link,
   BadgeCheck,
-  Activity
+  Activity,
+  Clock
 };

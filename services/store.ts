@@ -29,6 +29,7 @@ interface StoreContextType {
   fetchUserById: (userId: number) => Promise<User | null>;
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
   getLikedTracks: (userId: number) => Promise<Track[]>;
+  getUserHistory: (userId: number) => Promise<Track[]>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -173,6 +174,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return await mapTracksData(tracksData || [], currentUser?.id);
     } catch (e) {
         console.error("Error fetching liked tracks", e);
+        return [];
+    }
+  }, [currentUser]);
+
+  const getUserHistory = useCallback(async (userId: number): Promise<Track[]> => {
+    try {
+        const { data: history } = await supabase
+            .from('listen_history')
+            .select('track_id, played_at')
+            .eq('user_id', userId)
+            .order('played_at', { ascending: false })
+            .limit(50); // Last 50 tracks
+        
+        if (!history || history.length === 0) return [];
+        
+        // Dedup tracks, keeping most recent listen
+        const seen = new Set();
+        const uniqueIds: string[] = [];
+        for (const h of history) {
+            if (!seen.has(h.track_id)) {
+                seen.add(h.track_id);
+                uniqueIds.push(h.track_id);
+            }
+        }
+
+        const { data: tracksData } = await supabase
+            .from('tracks')
+            .select(`*, profiles:uploader_id(username, photo_url)`)
+            .in('id', uniqueIds);
+
+        if (!tracksData) return [];
+        
+        const mapped = await mapTracksData(tracksData, currentUser?.id);
+        
+        // Sort back by history order
+        return uniqueIds.map(id => mapped.find(t => t.id === id)).filter(Boolean) as Track[];
+    } catch (e) {
+        console.error("Error fetching history", e);
         return [];
     }
   }, [currentUser]);
@@ -624,7 +663,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         uploadImage,
         fetchUserById,
         getChartTracks,
-        getLikedTracks
+        getLikedTracks,
+        getUserHistory
       }
     },
     children

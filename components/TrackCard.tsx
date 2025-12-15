@@ -16,6 +16,10 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const [commentText, setCommentText] = useState('');
   const [showMenu, setShowMenu] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  
+  // Animation state for "Like"
+  const [isLiking, setIsLiking] = useState(false);
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,6 +34,11 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Trigger animation
+    setIsLiking(true);
+    setTimeout(() => setIsLiking(false), 400); // Reset after animation duration
+
     toggleLike(track.id);
   };
 
@@ -189,7 +198,9 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleLike}
                 className={`flex items-center gap-1.5 text-sm transition-colors ${track.isLikedByCurrentUser ? 'text-red-500' : 'text-zinc-400 hover:text-white'}`}
             >
-                <Heart size={18} fill={track.isLikedByCurrentUser ? "currentColor" : "none"} />
+                <div className={isLiking ? 'animate-like' : ''}>
+                    <Heart size={18} fill={track.isLikedByCurrentUser ? "currentColor" : "none"} />
+                </div>
                 <span>{track.likes}</span>
             </button>
             
