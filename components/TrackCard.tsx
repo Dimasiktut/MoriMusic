@@ -52,7 +52,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     e.stopPropagation();
     
     const deepLink = `${TELEGRAM_APP_LINK}`;
-    const shareText = `Слушать мой трек название: ${track.title} Автор: ${track.uploaderName} on MoriMusic 🎧`;
+    const shareText = `Слушать трек название: ${track.title} Автор: ${track.uploaderName} на MoriMusic 🎧`;
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
