@@ -119,6 +119,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     const initApp = async () => {
       try {
+        // Try to sign in anonymously to satisfy basic RLS policies (e.g., "authenticated" role)
+        // This is a "best effort" to fix RLS errors without backend access.
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+           await supabase.auth.signInAnonymously().catch(err => console.warn("Anon sign-in failed", err));
+        }
+
         // @ts-ignore
         const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
         
@@ -175,7 +182,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } else {
           // Dev mode or non-Telegram environment
           console.warn("No Telegram User detected.");
-          // We do not load a mock user anymore.
           setCurrentUser(null);
         }
 
@@ -208,13 +214,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // 1. Upload Audio
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
+        // Note: We use currentUser.id (Telegram ID) in path. 
+        // If RLS enforces auth.uid() match, this will fail unless we are authenticated as that user.
+        // Since we are likely anon or signed in anonymously with a different UUID, 
+        // the Storage RLS policy must be permissive (e.g., public or allow 'authenticated' generally).
         const audioPath = `audio/${currentUser.id}/${audioName}`;
         
         const { error: audioError } = await supabase.storage
             .from('music')
             .upload(audioPath, data.audioFile);
         
-        if (audioError) throw new Error(`Audio upload failed: ${audioError.message}`);
+        if (audioError) {
+             throw new Error(`Audio upload failed (Storage): ${audioError.message}. Check your Storage RLS policies.`);
+        }
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
 
@@ -255,7 +267,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e: any) {
         console.error("Upload failed", e);
         // Show the actual error message to help debugging
-        alert(`Upload failed: ${e.message || JSON.stringify(e)}`);
+        alert(`Upload Failed!\n\n${e.message || JSON.stringify(e)}\n\nTip: If you see "row level security policy", you need to disable RLS or add a policy in Supabase Dashboard for the 'music' bucket and 'tracks' table.`);
     } finally {
         setIsLoading(false);
     }
