@@ -3,8 +3,6 @@ import { useStore } from '../services/store';
 import TrackCard from '../components/TrackCard';
 import { Track } from '../types';
 import { Search } from '../components/ui/Icons';
-// @ts-ignore
-import logoUrl from '../mori-music-logo-play-music.png';
 
 interface FeedProps {
   onPlayTrack: (track: Track) => void;
@@ -43,7 +41,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
             {/* Logo Logic: Try to show image, fallback to text if fails */}
             {!logoError ? (
                 <img 
-                    src={logoUrl} 
+                    src="/mori-music-logo-play-music.png" 
                     alt="MoriMusic" 
                     className="h-14 w-auto object-contain drop-shadow-md" 
                     onError={() => setLogoError(true)}
