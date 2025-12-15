@@ -108,66 +108,82 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Initialize App
   useEffect(() => {
     const initApp = async () => {
-      // @ts-ignore
-      const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-      
-      let userId = 0;
+      try {
+        // @ts-ignore
+        const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+        
+        let userId = 0;
 
-      if (tgUser) {
-        userId = tgUser.id;
-        // Check if user exists in DB
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single();
+        if (tgUser) {
+          userId = tgUser.id;
+          // Check if user exists in DB
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single();
 
-        if (profile) {
-          // Calculate stats dynamically or rely on stored jsonb
-          // For simplicity, we construct the User object
-          setCurrentUser({
-            id: profile.id,
-            username: profile.username,
-            firstName: profile.first_name,
-            lastName: profile.last_name,
-            photoUrl: profile.photo_url,
-            bio: profile.bio,
-            links: profile.links || {},
-            stats: { uploads: 0, likesReceived: 0, totalPlays: 0 } // Todo: implement real stats aggregation
-          });
+          if (profile) {
+            // Calculate stats dynamically or rely on stored jsonb
+            // For simplicity, we construct the User object
+            setCurrentUser({
+              id: profile.id,
+              username: profile.username,
+              firstName: profile.first_name,
+              lastName: profile.last_name,
+              photoUrl: profile.photo_url,
+              bio: profile.bio,
+              links: profile.links || {},
+              stats: { uploads: 0, likesReceived: 0, totalPlays: 0 } // Todo: implement real stats aggregation
+            });
+          } else if (!error) { 
+             // Error might mean row not found, or network error. 
+             // If connection is working but user not found, create new.
+             // If error is connection, we might skip this.
+             // However, for simplicity, let's try insert.
+            const newUser = {
+              id: userId,
+              username: tgUser.username || `user_${userId}`,
+              first_name: tgUser.first_name,
+              last_name: tgUser.last_name,
+              photo_url: tgUser.photo_url,
+            };
+            
+            await supabase.from('profiles').insert(newUser);
+            setCurrentUser({
+              ...INITIAL_USER,
+              id: userId,
+              username: newUser.username,
+              firstName: newUser.first_name,
+              photoUrl: newUser.photo_url
+            });
+          } else {
+             console.warn("Could not fetch profile, using mock/initial", error);
+             // If DB is down or disconnected, we might want fallback?
+             // Proceeding with mock/initial to avoid empty state
+             setCurrentUser(INITIAL_USER);
+             userId = INITIAL_USER.id;
+          }
         } else {
-          // Create new user
-          const newUser = {
-            id: userId,
-            username: tgUser.username || `user_${userId}`,
-            first_name: tgUser.first_name,
-            last_name: tgUser.last_name,
-            photo_url: tgUser.photo_url,
-          };
-          
-          await supabase.from('profiles').insert(newUser);
-          setCurrentUser({
-            ...INITIAL_USER,
-            id: userId,
-            username: newUser.username,
-            firstName: newUser.first_name,
-            photoUrl: newUser.photo_url
-          });
+          // Dev mode fallback
+          console.warn("No Telegram User detected. Using Mock/Dev mode might fail with DB RLS.");
+          setCurrentUser(INITIAL_USER);
+          userId = INITIAL_USER.id;
         }
-      } else {
-        // Dev mode fallback
-        console.warn("No Telegram User detected. Using Mock/Dev mode might fail with DB RLS.");
-        setCurrentUser(INITIAL_USER);
-        userId = INITIAL_USER.id;
-      }
 
-      await fetchTracks(userId);
-      setIsLoading(false);
-      
-      // @ts-ignore
-      window.Telegram?.WebApp?.expand();
-      // @ts-ignore
-      window.Telegram?.WebApp?.ready();
+        await fetchTracks(userId);
+        
+        // @ts-ignore
+        window.Telegram?.WebApp?.expand();
+        // @ts-ignore
+        window.Telegram?.WebApp?.ready();
+      } catch (e) {
+        console.error("App initialization failed", e);
+        // Fallback in case of critical error
+        setCurrentUser(INITIAL_USER);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     initApp();
@@ -220,7 +236,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     } catch (e) {
         console.error("Upload failed", e);
-        alert("Upload failed. See console.");
+        alert("Upload failed. Check console for details (often DB permissions or missing keys).");
     } finally {
         setIsLoading(false);
     }
