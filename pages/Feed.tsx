@@ -35,10 +35,25 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
 
   return (
     <div className="p-4 pb-32">
-      <header className="flex justify-between items-center mb-4 mt-2">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
-          MoriMusic
-        </h1>
+      <header className="flex justify-between items-center mb-6 mt-2">
+        <div className="flex items-center gap-2">
+            {/* Logo Placeholder */}
+            <img 
+                src="/mori-music-logo-play-music.png" 
+                alt="MoriMusic" 
+                className="h-12 w-auto object-contain drop-shadow-lg" 
+                onError={(e) => {
+                    // Fallback if image not found
+                    e.currentTarget.style.display = 'none';
+                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                }}
+            />
+            {/* Fallback Text */}
+            <h1 className="hidden text-2xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+               MoriMusic
+            </h1>
+        </div>
+
         <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/5">
           <button 
             onClick={() => setFilter('new')}

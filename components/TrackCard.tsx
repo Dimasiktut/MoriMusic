@@ -56,17 +56,38 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
+    
+    // Check if running inside Telegram
+    // Enhanced check: initData, platform, or UserAgent to strictly catch Android WebView environment
+    const isTelegram = (tg && (tg.initData || tg.platform !== 'unknown')) || 
+                       (navigator.userAgent && navigator.userAgent.includes('Telegram'));
 
-    // 1. Priority: Telegram Share (if in TG WebApp)
-    // using t.me/share/url is more reliable inside Telegram than navigator.share
-    if (tg && tg.initData && tg.openTelegramLink) {
-         const url = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
-         tg.openTelegramLink(url);
+    const copyToClipboard = () => {
+        navigator.clipboard.writeText(deepLink).then(() => {
+            setIsCopied(true);
+            if (tg?.HapticFeedback) {
+                tg.HapticFeedback.notificationOccurred('success');
+            }
+            setTimeout(() => setIsCopied(false), 2000);
+        }).catch(err => {
+            console.error("Clipboard failed", err);
+        });
+    };
+
+    // 1. Inside Telegram: Use openTelegramLink OR Clipboard. NEVER navigator.share
+    if (isTelegram) {
+         if (tg && typeof tg.openTelegramLink === 'function') {
+             const url = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
+             tg.openTelegramLink(url);
+         } else {
+             // Fallback to clipboard if openTelegramLink is missing (unlikely in WebApp)
+             copyToClipboard();
+         }
          setShowMenu(false);
          return;
     }
 
-    // 2. Secondary: Native Share (Mobile Browsers outside TG)
+    // 2. Outside Telegram (Regular Browser): Try Native Share, then Clipboard
     if (navigator.share) {
         try {
             await navigator.share({
@@ -76,20 +97,15 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
             });
             setShowMenu(false);
             return; 
-        } catch (err) {
+        } catch (err: any) {
             console.warn("Native share failed", err);
+            if (err.name !== 'AbortError') {
+                copyToClipboard();
+            }
         }
+    } else {
+        copyToClipboard();
     }
-
-    // 3. Fallback: Clipboard
-    navigator.clipboard.writeText(deepLink).then(() => {
-        setIsCopied(true);
-        if (tg?.HapticFeedback) {
-            tg.HapticFeedback.notificationOccurred('success');
-        }
-        
-        setTimeout(() => setIsCopied(false), 2000);
-    });
     
     setShowMenu(false);
   };
