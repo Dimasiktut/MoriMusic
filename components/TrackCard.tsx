@@ -51,31 +51,41 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    // Generate Deep Link: https://t.me/botname/appname?startapp=track_UUID
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
+    const shareText = `Listen to ${track.title} by ${track.uploaderName} on MoriMusic 🎧`;
     
-    // Try Native Share first (Mobile)
+    // @ts-ignore
+    const tg = window.Telegram?.WebApp;
+
+    // 1. Priority: Telegram Share (if in TG WebApp)
+    // using t.me/share/url is more reliable inside Telegram than navigator.share
+    if (tg && tg.initData && tg.openTelegramLink) {
+         const url = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
+         tg.openTelegramLink(url);
+         setShowMenu(false);
+         return;
+    }
+
+    // 2. Secondary: Native Share (Mobile Browsers outside TG)
     if (navigator.share) {
         try {
             await navigator.share({
-                title: `Listen to ${track.title} on MoriMusic`,
-                text: `Check out this track by ${track.uploaderName} 🔥`,
+                title: 'MoriMusic',
+                text: shareText,
                 url: deepLink
             });
-            return; // Exit if native share successful
+            setShowMenu(false);
+            return; 
         } catch (err) {
-            console.warn("Native share failed or cancelled", err);
+            console.warn("Native share failed", err);
         }
     }
 
-    // Fallback to Clipboard
+    // 3. Fallback: Clipboard
     navigator.clipboard.writeText(deepLink).then(() => {
         setIsCopied(true);
-        // Haptic feedback if available
-        // @ts-ignore
-        if (window.Telegram?.WebApp?.HapticFeedback) {
-            // @ts-ignore
-            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+        if (tg?.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
         }
         
         setTimeout(() => setIsCopied(false), 2000);
