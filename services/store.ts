@@ -182,7 +182,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (error) throw error;
 
           // @ts-ignore
-          return (data || []).map(item => {
+          return (data || []).map((item: any) => {
               const p = item.playlists;
               if (!p) return null;
               return {
@@ -221,7 +221,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           if (error) throw error;
           
           // @ts-ignore
-          const rawTracks = data.map(item => item.tracks).filter(Boolean);
+          const rawTracks = (data || []).map((item: any) => item.tracks).filter(Boolean);
           
           return await mapTracksData(rawTracks, currentUser?.id);
       } catch (e) {
