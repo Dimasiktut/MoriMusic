@@ -27,6 +27,7 @@ interface StoreContextType {
   createPlaylist: (title: string) => Promise<void>;
   addToPlaylist: (trackId: string, playlistId: string) => Promise<void>;
   fetchUserPlaylists: (userId: number) => Promise<Playlist[]>;
+  fetchPlaylistTracks: (playlistId: string) => Promise<Track[]>;
   deleteTrack: (trackId: string) => Promise<void>;
   toggleLike: (trackId: string) => Promise<void>;
   addComment: (trackId: string, text: string) => Promise<void>;
@@ -62,7 +63,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [language]);
 
   // Helper to map DB track to UI Track
-  const mapTracksData = async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
+  const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
 
       let userLikes: string[] = [];
@@ -118,7 +119,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           isVerifiedUploader: t.plays > 1000 
         };
       }));
-  };
+  }, []);
 
   const fetchTracks = useCallback(async (userId?: number) => {
     try {
@@ -141,7 +142,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.error("Error fetching tracks:", e);
       setTracks([]); 
     }
-  }, []);
+  }, [mapTracksData]);
 
   const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
@@ -166,6 +167,37 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           return [];
       }
   }, []);
+
+  const fetchPlaylistTracks = useCallback(async (playlistId: string): Promise<Track[]> => {
+      try {
+          // Join playlist_items with tracks and profiles
+          const { data, error } = await supabase
+            .from('playlist_items')
+            .select(`
+                added_at,
+                tracks:track_id (
+                    *,
+                    profiles:uploader_id (
+                        username,
+                        photo_url
+                    )
+                )
+            `)
+            .eq('playlist_id', playlistId)
+            .order('added_at', { ascending: false });
+
+          if (error) throw error;
+          
+          // Extract the track objects from the join
+          // @ts-ignore
+          const rawTracks = data.map(item => item.tracks).filter(Boolean);
+          
+          return await mapTracksData(rawTracks, currentUser?.id);
+      } catch (e) {
+          console.error("Error fetching playlist tracks:", e);
+          return [];
+      }
+  }, [currentUser, mapTracksData]);
 
   const createPlaylist = useCallback(async (title: string) => {
       if(!currentUser) return;
@@ -280,34 +312,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return data.publicUrl;
   }, []);
 
+  // --- INTERNAL UPLOAD HELPERS ---
+  const _uploadFileToStorage = async (file: File, folder: string): Promise<string> => {
+      // Generate a clean safe filename with timestamp and random string to avoid collision and encoding issues
+      const fileExt = file.name.split('.').pop() || 'bin';
+      const safeName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      const filePath = `${folder}/${safeName}`;
+      
+      const { error } = await supabase.storage.from('music').upload(filePath, file, { upsert: true });
+      if (error) throw new Error(`Storage upload failed: ${error.message}`);
+      
+      const { data } = supabase.storage.from('music').getPublicUrl(filePath);
+      return data.publicUrl;
+  };
+
+  const _insertTrackToDb = async (trackData: any) => {
+      const { error } = await supabase.from('tracks').insert(trackData);
+      if (error) throw new Error(`DB insert failed: ${error.message}`);
+  };
+
+  // --- PUBLIC UPLOAD FUNCTIONS ---
+
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
+    setIsLoading(true);
     try {
-        const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        let uploadPathOwner = currentUser.id.toString();
-        
         let audioUrl = data.existingAudioUrl || '';
         if (data.audioFile && !audioUrl) {
-            const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
-            const audioPath = `audio/${uploadPathOwner}/${audioName}`;
-            const { error } = await supabase.storage.from('music').upload(audioPath, data.audioFile);
-            if (error) throw new Error(error.message);
-            const { data: urlData } = supabase.storage.from('music').getPublicUrl(audioPath);
-            audioUrl = urlData.publicUrl;
+            audioUrl = await _uploadFileToStorage(data.audioFile, `audio/${currentUser.id}`);
         }
 
         let coverUrl = data.existingCoverUrl || 'https://picsum.photos/400/400?random=default';
         if (data.coverFile && !data.existingCoverUrl) {
-            const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
-            const coverPath = `covers/${uploadPathOwner}/${coverName}`;
-            const { error } = await supabase.storage.from('music').upload(coverPath, data.coverFile);
-            if (!error) {
-                const { data: urlData } = supabase.storage.from('music').getPublicUrl(coverPath);
-                coverUrl = urlData.publicUrl;
-            }
+            coverUrl = await _uploadFileToStorage(data.coverFile, `covers/${currentUser.id}`);
         }
 
-        const { error: dbError } = await supabase.from('tracks').insert({
+        await _insertTrackToDb({
             uploader_id: currentUser.id,
             title: data.title,
             description: data.description,
@@ -317,12 +357,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             duration: data.duration
         });
 
-        if (dbError) throw new Error(dbError.message);
         await fetchTracks(currentUser.id); // Refresh feed
-        
     } catch (e: any) {
         console.error("Upload failed", e);
-        throw e;
+        alert(`Upload error: ${e.message}`);
+    } finally {
+        setIsLoading(false);
     }
   }, [currentUser, fetchTracks]);
 
@@ -339,52 +379,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
 
     try {
-        // Upload Common Cover Once
+        // 1. Upload Common Cover Once
         let commonCoverUrl: string | undefined = undefined;
         if (commonData.coverFile) {
-             const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
-             const coverName = `album_${Date.now()}_${sanitize(commonData.coverFile.name)}`;
-             const coverPath = `covers/${currentUser.id}/${coverName}`;
-             const { error } = await supabase.storage.from('music').upload(coverPath, commonData.coverFile);
-             if (!error) {
-                 const { data } = supabase.storage.from('music').getPublicUrl(coverPath);
-                 commonCoverUrl = data.publicUrl;
-             }
+             commonCoverUrl = await _uploadFileToStorage(commonData.coverFile, `covers/${currentUser.id}`);
         }
 
-        // Loop Files
+        // 2. Loop Files
         for (const file of files) {
-             // Calculate Duration
+             // Calculate Duration (best effort)
              let duration = 0;
              try {
+                // Use a simpler approach or default if fails
                 const audio = new Audio(URL.createObjectURL(file));
                 await new Promise(resolve => {
                     audio.onloadedmetadata = () => {
                         duration = audio.duration;
                         resolve(true);
                     };
-                    audio.onerror = () => resolve(true); // skip on error
+                    audio.onerror = () => resolve(true);
+                    // Timeout safety
+                    setTimeout(() => resolve(true), 1000); 
                 });
              } catch(err) { console.warn("Duration calc failed", err); }
 
-            const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-            await uploadTrack({
+            const title = file.name.replace(/\.[^/.]+$/, ""); // Remove extension for title
+            
+            // Upload Audio
+            const audioUrl = await _uploadFileToStorage(file, `audio/${currentUser.id}`);
+
+            // Insert
+            await _insertTrackToDb({
+                uploader_id: currentUser.id,
                 title,
                 description: commonData.description,
                 genre: commonData.genre,
-                audioFile: file,
-                coverFile: null,
-                existingCoverUrl: commonCoverUrl,
+                audio_url: audioUrl,
+                cover_url: commonCoverUrl || 'https://picsum.photos/400/400?random=default',
                 duration: duration || 180
             });
         }
+        
+        await fetchTracks(currentUser.id);
     } catch (e: any) {
         console.error("Album upload error", e);
         alert(`Failed: ${e.message}`);
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, uploadTrack, t]);
+  }, [currentUser, fetchTracks, t]);
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
@@ -472,7 +515,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
        if (!data) return null;
        
-       // Simplified stats fetching for profile view
        const { count: uploads } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
        
        return {
@@ -489,13 +531,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => {
-      // Simplified charts logic - returns top tracks by likes/plays for now
-      // In production, this would use the listen_history table aggregation
       try {
           const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', {ascending: false}).limit(50);
           return mapTracksData(data || [], currentUser?.id);
       } catch { return []; }
-  }, [currentUser]);
+  }, [currentUser, mapTracksData]);
 
   const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
@@ -503,7 +543,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const ids = data.map(i => i.track_id);
       const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
       return mapTracksData(tracks || [], currentUser?.id);
-  }, [currentUser]);
+  }, [currentUser, mapTracksData]);
 
   const getUserHistory = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', {ascending:false}).limit(20);
@@ -511,7 +551,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const ids = [...new Set(data.map(i => i.track_id))];
       const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
       return mapTracksData(tracks || [], currentUser?.id);
-  }, [currentUser]);
+  }, [currentUser, mapTracksData]);
 
   return React.createElement(
     StoreContext.Provider,
@@ -529,6 +569,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createPlaylist,
         addToPlaylist,
         fetchUserPlaylists,
+        fetchPlaylistTracks,
         deleteTrack,
         toggleLike,
         addComment,
@@ -547,6 +588,4 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
 export const useStore = () => {
   const context = useContext(StoreContext);
-  if (!context) throw new Error("useStore must be used within StoreProvider");
-  return context;
-};
+  if (!context) throw new Error("useStore

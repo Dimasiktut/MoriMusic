@@ -13,7 +13,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, createPlaylist, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, fetchPlaylistTracks, createPlaylist, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
@@ -31,6 +31,11 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
+
+  // Playlist View State
+  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
+  const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
+  const [loadingPlaylistTracks, setLoadingPlaylistTracks] = useState(false);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -70,6 +75,19 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     loadData();
   }, [activeTab, profileUser, getLikedTracks, getUserHistory, fetchUserPlaylists]);
 
+  // Load playlist tracks when a playlist is selected
+  useEffect(() => {
+      const loadPlaylistTracks = async () => {
+          if (selectedPlaylist) {
+              setLoadingPlaylistTracks(true);
+              const tracks = await fetchPlaylistTracks(selectedPlaylist.id);
+              setPlaylistTracks(tracks);
+              setLoadingPlaylistTracks(false);
+          }
+      };
+      loadPlaylistTracks();
+  }, [selectedPlaylist, fetchPlaylistTracks]);
+
   const handleCreatePlaylist = async () => {
       if (!newPlaylistTitle.trim()) return;
       setCreatingPlaylist(true);
@@ -81,6 +99,15 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
           const updated = await fetchUserPlaylists(profileUser.id);
           setPlaylists(updated);
       }
+  };
+
+  const handleOpenPlaylist = (playlist: Playlist) => {
+      setSelectedPlaylist(playlist);
+  };
+
+  const handleBackFromPlaylist = () => {
+      setSelectedPlaylist(null);
+      setPlaylistTracks([]);
   };
 
   if (loadingProfile) return <div className="p-4 pt-10"><TrackSkeleton /><TrackSkeleton /></div>;
@@ -101,6 +128,72 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     return key;
   };
 
+  // --- RENDER PLAYLIST VIEW ---
+  if (selectedPlaylist) {
+      return (
+          <div className="pb-32 min-h-screen bg-zinc-950 animate-in slide-in-from-right-4 duration-300">
+              {/* Playlist Header */}
+              <div className="relative h-48 bg-zinc-900">
+                  {selectedPlaylist.coverUrl ? (
+                      <div className="absolute inset-0">
+                          <img src={selectedPlaylist.coverUrl} className="w-full h-full object-cover opacity-50 blur-lg" alt="" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 to-transparent" />
+                      </div>
+                  ) : (
+                      <div className="absolute inset-0 bg-gradient-to-b from-violet-900/20 to-zinc-950" />
+                  )}
+                  
+                  <div className="absolute top-4 left-4 z-20">
+                      <button onClick={handleBackFromPlaylist} className="p-2 bg-black/30 rounded-full hover:bg-black/50 backdrop-blur-md text-white transition-all">
+                          <ArrowLeft size={20} />
+                      </button>
+                  </div>
+
+                  <div className="absolute bottom-4 left-4 right-4 flex items-end gap-4 z-10">
+                      <div className="w-24 h-24 rounded-lg bg-zinc-800 shadow-2xl flex-shrink-0 overflow-hidden border border-white/10">
+                          {selectedPlaylist.coverUrl ? (
+                              <img src={selectedPlaylist.coverUrl} className="w-full h-full object-cover" alt={selectedPlaylist.title} />
+                          ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-500 bg-zinc-900">
+                                  <ListMusic size={32} />
+                              </div>
+                          )}
+                      </div>
+                      <div className="mb-1">
+                          <h2 className="text-2xl font-bold text-white leading-tight">{selectedPlaylist.title}</h2>
+                          <p className="text-sm text-zinc-400">{profileUser.username}</p>
+                      </div>
+                  </div>
+              </div>
+
+              {/* Tracks List */}
+              <div className="p-4 space-y-2">
+                  <div className="text-xs text-zinc-500 uppercase tracking-wide mb-2 font-medium">Tracks</div>
+                  {loadingPlaylistTracks ? (
+                      <>
+                          <TrackSkeleton />
+                          <TrackSkeleton />
+                      </>
+                  ) : playlistTracks.length > 0 ? (
+                      playlistTracks.map(track => (
+                          <TrackCard 
+                             key={track.id} 
+                             track={track} 
+                             onPlay={onPlayTrack} 
+                             onOpenProfile={isOwnProfile ? undefined : undefined} 
+                          />
+                      ))
+                  ) : (
+                      <div className="text-center py-12 border border-dashed border-zinc-800 rounded-xl bg-zinc-900/50">
+                          <p className="text-zinc-500">No tracks in this playlist yet.</p>
+                      </div>
+                  )}
+              </div>
+          </div>
+      );
+  }
+
+  // --- RENDER MAIN PROFILE ---
   return (
     <div className="pb-32 animate-in fade-in slide-in-from-bottom-4 duration-300 relative">
        {showCreatePlaylist && (
@@ -240,7 +333,11 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                         ) : playlists.length > 0 ? (
                             <div className="grid grid-cols-2 gap-3">
                                 {playlists.map(p => (
-                                    <div key={p.id} className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors">
+                                    <div 
+                                        key={p.id} 
+                                        onClick={() => handleOpenPlaylist(p)}
+                                        className="bg-zinc-900 rounded-xl overflow-hidden border border-white/5 group cursor-pointer hover:border-violet-500/50 transition-colors"
+                                    >
                                         <div className="aspect-square bg-zinc-800 relative">
                                             {p.coverUrl ? (
                                                 <img src={p.coverUrl} className="w-full h-full object-cover" alt={p.title} />
