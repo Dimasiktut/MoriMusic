@@ -80,7 +80,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay }) => {
                 className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors"
             >
                 <MessageCircle size={18} />
-                <span>{track.comments.length}</span>
+                <span>{track.comments?.length || 0}</span>
             </button>
             
              <button className="text-zinc-400 hover:text-white transition-colors">
@@ -97,7 +97,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay }) => {
       {showComments && (
         <div className="mt-4 pt-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
             <div className="space-y-3 max-h-40 overflow-y-auto mb-3 custom-scrollbar">
-                {track.comments.length === 0 ? (
+                {(!track.comments || track.comments.length === 0) ? (
                     <p className="text-center text-xs text-zinc-600 italic">No comments yet. Be the first!</p>
                 ) : (
                     track.comments.map(c => (

@@ -36,11 +36,11 @@ export const MOCK_TRACKS: Track[] = [
     coverUrl: 'https://picsum.photos/400/400?random=1',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
     duration: 372,
-    createdAt: Date.now() - 10000000,
+    createdAt: new Date(Date.now() - 10000000).toISOString(),
     plays: 1240,
     likes: 342,
     comments: [
-      { id: 'c1', userId: 202, username: 'vibez', text: 'This hits hard!', createdAt: Date.now() - 50000 }
+      { id: 'c1', userId: 202, username: 'vibez', text: 'This hits hard!', createdAt: new Date(Date.now() - 50000).toISOString() }
     ],
     isLikedByCurrentUser: false,
   },
@@ -55,7 +55,7 @@ export const MOCK_TRACKS: Track[] = [
     coverUrl: 'https://picsum.photos/400/400?random=2',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
     duration: 425,
-    createdAt: Date.now() - 25000000,
+    createdAt: new Date(Date.now() - 25000000).toISOString(),
     plays: 8500,
     likes: 1200,
     comments: [],
@@ -72,7 +72,7 @@ export const MOCK_TRACKS: Track[] = [
     coverUrl: 'https://picsum.photos/400/400?random=3',
     audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
     duration: 310,
-    createdAt: Date.now() - 5000,
+    createdAt: new Date(Date.now() - 5000).toISOString(),
     plays: 12,
     likes: 4,
     comments: [],

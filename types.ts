@@ -1,5 +1,5 @@
 export interface User {
-  id: number;
+  id: number; // Telegram ID is number (bigint)
   username: string;
   firstName?: string;
   lastName?: string;
@@ -19,16 +19,16 @@ export interface User {
 }
 
 export interface Comment {
-  id: string;
+  id: string; // UUID
   userId: number;
   username: string;
   avatar?: string;
   text: string;
-  createdAt: number;
+  createdAt: string; // ISO string from DB
 }
 
 export interface Track {
-  id: string;
+  id: string; // UUID from DB
   uploaderId: number;
   uploaderName: string;
   uploaderAvatar?: string;
@@ -38,9 +38,9 @@ export interface Track {
   coverUrl: string;
   audioUrl: string;
   duration: number;
-  createdAt: number;
+  createdAt: string; // ISO string from DB
   plays: number;
-  likes: number;
+  likes: number; // Count
   comments: Comment[];
   isLikedByCurrentUser?: boolean;
 }

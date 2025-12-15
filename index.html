@@ -2,9 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>MoriMusic</title>
-    <!-- We keep Tailwind CDN for simplicity, though normally this is done in CSS -->
+    <!-- We keep Tailwind CDN for simplicity -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -12,6 +12,8 @@
         background-color: #09090b; /* zinc-950 */
         color: #fafafa; /* zinc-50 */
         -webkit-tap-highlight-color: transparent;
+        min-height: 100vh;
+        overflow-x: hidden;
       }
       /* Custom scrollbar for webkit */
       ::-webkit-scrollbar {
@@ -24,6 +26,14 @@
         background: #3f3f46; 
         border-radius: 3px;
       }
+      
+      /* Safe Area Utilities for Mobile (Telegram WebApp) */
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      }
+      .pt-safe {
+        padding-top: env(safe-area-inset-top, 0px);
+      }
     </style>
   <script type="importmap">
 {
@@ -33,7 +43,8 @@
     "react/": "https://esm.sh/react@^19.2.3/",
     "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
     "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.87.1"
   }
 }
 </script>

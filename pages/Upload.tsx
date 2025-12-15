@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useStore } from '../services/store';
-import { UploadCloud, Image as ImageIcon, Music } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Music, Loader2 } from 'lucide-react';
 import { GENRES } from '../constants';
 
 interface UploadProps {
@@ -8,7 +8,7 @@ interface UploadProps {
 }
 
 const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
-  const { uploadTrack } = useStore();
+  const { uploadTrack, isLoading } = useStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
@@ -34,21 +34,17 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!audioFile || !title) return;
 
-    // Create persistent URLs for the session
-    const audioUrl = URL.createObjectURL(audioFile);
-    const coverUrl = coverFile ? URL.createObjectURL(coverFile) : 'https://picsum.photos/400/400?random=default';
-
-    uploadTrack({
+    await uploadTrack({
       title,
       description,
       genre,
-      audioUrl,
-      coverUrl,
-      duration: 180, // Mock duration
+      audioFile,
+      coverFile,
+      duration: 180, // Note: To get real duration, we need to load metadata from file, skipping for simplicity
     });
 
     onUploadSuccess();
@@ -147,10 +143,17 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
 
           <button 
             type="submit"
-            disabled={!audioFile || !title}
-            className="w-full bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold py-4 rounded-xl shadow-lg shadow-violet-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!audioFile || !title || isLoading}
+            className="w-full bg-violet-600 hover:bg-violet-700 active:scale-95 text-white font-bold py-4 rounded-xl shadow-lg shadow-violet-900/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Publish Track
+            {isLoading ? (
+                <>
+                    <Loader2 className="animate-spin" size={20} />
+                    Uploading...
+                </>
+            ) : (
+                "Publish Track"
+            )}
           </button>
        </form>
     </div>

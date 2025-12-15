@@ -8,15 +8,19 @@ interface FeedProps {
 }
 
 const Feed: React.FC<FeedProps> = ({ onPlayTrack }) => {
-  const { tracks } = useStore();
+  const { tracks, isLoading } = useStore();
   const [filter, setFilter] = useState<'new' | 'hot'>('new');
 
   const sortedTracks = [...tracks].sort((a, b) => {
     if (filter === 'new') {
-      return b.createdAt - a.createdAt;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     }
     return (b.likes + b.plays) - (a.likes + a.plays);
   });
+
+  if (isLoading && tracks.length === 0) {
+      return <div className="p-10 text-center text-zinc-500">Loading beats...</div>;
+  }
 
   return (
     <div className="p-4 pb-32">
@@ -46,7 +50,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack }) => {
         ))}
         {sortedTracks.length === 0 && (
             <div className="text-center py-20 text-zinc-600">
-                No tracks found.
+                No tracks found. Upload the first one!
             </div>
         )}
       </div>
