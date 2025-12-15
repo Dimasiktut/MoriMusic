@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment } from '../types';
-import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_GROUP_LINK } from '../constants';
+import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_GROUP_LINK, TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
 
 interface UploadTrackData {
@@ -16,6 +16,9 @@ interface StoreContextType {
   currentUser: User | null;
   tracks: Track[];
   isLoading: boolean;
+  language: Language;
+  setLanguage: (lang: Language) => void;
+  t: (key: keyof typeof TRANSLATIONS['en']) => string;
   uploadTrack: (data: UploadTrackData) => Promise<void>;
   deleteTrack: (trackId: string) => Promise<void>;
   toggleLike: (trackId: string) => Promise<void>;
@@ -33,6 +36,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  
+  // Default to Russian if not set
+  const [language, setLanguageState] = useState<Language>(() => {
+    const saved = localStorage.getItem('mori_language');
+    return (saved === 'en' || saved === 'ru') ? saved : 'ru';
+  });
+
+  const setLanguage = (lang: Language) => {
+    setLanguageState(lang);
+    localStorage.setItem('mori_language', lang);
+  };
+
+  const t = useCallback((key: keyof typeof TRANSLATIONS['en']) => {
+    return TRANSLATIONS[language][key] || key;
+  }, [language]);
 
   // Helper to fetch tracks with joined data
   const fetchTracks = useCallback(async (userId?: number) => {
@@ -243,7 +261,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return;
             }
             const shouldJoin = confirm(
-                `🔒 Доступ запрещен\n\nЧтобы загружать треки, вы должны быть подписаны на наш канал ${TELEGRAM_CHAT_ID}.\n\nПодписаться сейчас?`
+                `🔒 ${t('upload_access_denied')}\n\n${t('upload_sub_required')} ${TELEGRAM_CHAT_ID}.\n\n${t('upload_sub_btn')}`
             );
             if (shouldJoin) {
                 // @ts-ignore
@@ -317,7 +335,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } finally {
         setIsLoading(false);
     }
-  }, [currentUser, fetchTracks]);
+  }, [currentUser, fetchTracks, t]);
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
@@ -568,6 +586,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         currentUser,
         tracks,
         isLoading,
+        language,
+        setLanguage,
+        t,
         uploadTrack,
         deleteTrack,
         toggleLike,

@@ -11,7 +11,7 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, addComment, deleteTrack } = useStore();
+  const { currentUser, toggleLike, addComment, deleteTrack, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [showMenu, setShowMenu] = useState(false);
@@ -42,7 +42,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this track? This cannot be undone.")) {
+    if (confirm(t('track_delete_confirm'))) {
         await deleteTrack(track.id);
     }
     setShowMenu(false);
@@ -51,8 +51,8 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
-    const deepLink = `${TELEGRAM_APP_LINK}`;
-    const shareText = `Слушать трек название: ${track.title} Автор: ${track.uploaderName} на MoriMusic 🎧`;
+    const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
+    const shareText = `${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} — MoriMusic 🎧`;
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
@@ -161,14 +161,14 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                                 className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
                              >
                                 {isCopied ? <Check size={12} className="text-green-500"/> : <Link size={12} />}
-                                {isCopied ? "Copied!" : "Share Track"}
+                                {isCopied ? t('track_copied') : t('track_share')}
                              </button>
                              {isOwner && (
                                 <button 
                                     onClick={handleDelete}
                                     className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2"
                                 >
-                                    <Trash2 size={12} /> Delete
+                                    <Trash2 size={12} /> {t('track_delete')}
                                 </button>
                              )}
                         </div>
@@ -181,7 +181,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                  {track.genre}
                </span>
                <span className="text-xs text-zinc-600">
-                  {new Date(track.createdAt).toLocaleDateString()}
+                  {new Date(track.createdAt).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}
                </span>
             </div>
         </div>
@@ -215,7 +215,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
         </div>
         
         <div className="text-xs text-zinc-500">
-            {track.plays.toLocaleString()} plays
+            {track.plays.toLocaleString()} {t('track_plays')}
         </div>
       </div>
 
@@ -224,7 +224,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
         <div className="mt-4 pt-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
             <div className="space-y-3 max-h-40 overflow-y-auto mb-3 custom-scrollbar">
                 {(!track.comments || track.comments.length === 0) ? (
-                    <p className="text-center text-xs text-zinc-600 italic">No comments yet. Be the first!</p>
+                    <p className="text-center text-xs text-zinc-600 italic">{t('track_no_comments')}</p>
                 ) : (
                     track.comments.map(c => (
                         <div key={c.id} className="flex gap-2 text-xs">
@@ -239,11 +239,11 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                     type="text" 
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
-                    placeholder="Add a comment..."
+                    placeholder={t('track_comment_placeholder')}
                     className="flex-1 bg-zinc-800 border-none rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-violet-500 outline-none"
                 />
                 <button type="submit" disabled={!commentText.trim()} className="text-violet-500 font-medium text-sm px-2 disabled:opacity-50">
-                    Post
+                    {t('track_comment_post')}
                 </button>
             </form>
         </div>

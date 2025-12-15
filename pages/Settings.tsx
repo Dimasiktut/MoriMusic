@@ -8,7 +8,7 @@ interface SettingsProps {
 }
 
 const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
-  const { currentUser, updateProfile, uploadImage } = useStore();
+  const { currentUser, updateProfile, uploadImage, t, language, setLanguage } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,7 +101,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
         onBack();
     } catch (err) {
         console.error("Failed to save profile:", err);
-        alert("Failed to save changes. Please try again.");
+        alert(t('settings_error'));
     } finally {
         setIsSaving(false);
     }
@@ -114,17 +114,38 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
         <button onClick={onBack} className="p-2 -ml-2 text-zinc-400 hover:text-white transition-colors">
           <ArrowLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold text-white">Edit Profile</h1>
+        <h1 className="text-xl font-bold text-white">{t('settings_title')}</h1>
       </div>
 
       <div className="p-4 max-w-lg mx-auto">
         <form onSubmit={handleSave} className="space-y-8">
+
+          {/* Language Selector */}
+          <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">{t('settings_language')}</h3>
+              <div className="flex bg-zinc-900 rounded-lg p-1 border border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('ru')}
+                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${language === 'ru' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}
+                  >
+                      Русский
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLanguage('en')}
+                    className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${language === 'en' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}
+                  >
+                      English
+                  </button>
+              </div>
+          </div>
           
           {/* Images Section */}
           <div className="space-y-4">
               {/* Header Image */}
               <div>
-                  <label className="block text-xs text-zinc-400 mb-2">Profile Header</label>
+                  <label className="block text-xs text-zinc-400 mb-2">{t('settings_header')}</label>
                   <div 
                     onClick={() => headerInputRef.current?.click()}
                     className="w-full h-32 rounded-xl bg-zinc-900 border-2 border-dashed border-zinc-800 hover:border-violet-500 cursor-pointer relative overflow-hidden group transition-colors"
@@ -139,7 +160,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
                       ) : (
                           <div className="w-full h-full flex items-center justify-center text-zinc-600 gap-2">
                               <ImageIcon size={20} />
-                              <span className="text-xs">Add Header Image</span>
+                              <span className="text-xs">{t('settings_header_add')}</span>
                           </div>
                       )}
                       <input 
@@ -178,17 +199,17 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
                     onChange={handleAvatarChange} 
                   />
                 </div>
-                <p className="mt-2 text-xs text-zinc-500">Tap avatar to change</p>
+                <p className="mt-2 text-xs text-zinc-500">{t('settings_avatar_hint')}</p>
               </div>
           </div>
 
           {/* Basic Info */}
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">Public Info</h3>
+            <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">{t('settings_public_info')}</h3>
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">First Name</label>
+                <label className="block text-xs text-zinc-400 mb-1.5">{t('settings_firstname')}</label>
                 <input 
                   type="text" 
                   value={firstName}
@@ -198,7 +219,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-zinc-400 mb-1.5">Last Name</label>
+                <label className="block text-xs text-zinc-400 mb-1.5">{t('settings_lastname')}</label>
                 <input 
                   type="text" 
                   value={lastName}
@@ -210,12 +231,12 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
             </div>
 
             <div>
-              <label className="block text-xs text-zinc-400 mb-1.5">Bio</label>
+              <label className="block text-xs text-zinc-400 mb-1.5">{t('settings_bio')}</label>
               <textarea 
                 value={bio}
                 onChange={e => setBio(e.target.value)}
                 className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white text-sm focus:ring-1 focus:ring-violet-500 outline-none min-h-[100px] resize-none transition-all"
-                placeholder="Tell the world about your music..."
+                placeholder={t('settings_bio_placeholder')}
                 maxLength={150}
               />
               <div className="text-right text-[10px] text-zinc-600 mt-1">{bio.length}/150</div>
@@ -224,7 +245,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
 
           {/* Social Links */}
           <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">Social Links</h3>
+            <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wider">{t('settings_socials')}</h3>
             
             <div className="space-y-3">
               <div className="relative">
@@ -275,7 +296,7 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
                   value={links.other || ''}
                   onChange={e => setLinks({...links, other: e.target.value})}
                   className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 pl-10 text-white text-sm focus:ring-1 focus:ring-violet-500 outline-none placeholder:text-zinc-700 transition-all"
-                  placeholder="Other (VK, YouTube, etc.)"
+                  placeholder={t('settings_other_placeholder')}
                 />
               </div>
             </div>
@@ -288,11 +309,11 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
           >
             {isSaving ? (
                 <>
-                    <Loader2 className="animate-spin" size={18} /> Saving...
+                    <Loader2 className="animate-spin" size={18} /> {t('settings_saving')}
                 </>
             ) : (
                 <>
-                    <Save size={18} /> Save Changes
+                    <Save size={18} /> {t('settings_save')}
                 </>
             )}
           </button>

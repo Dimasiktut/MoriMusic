@@ -10,7 +10,7 @@ interface FeedProps {
 }
 
 const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
-  const { tracks, isLoading } = useStore();
+  const { tracks, isLoading, t } = useStore();
   const [filter, setFilter] = useState<'new' | 'hot'>('new');
   const [searchQuery, setSearchQuery] = useState('');
   const [logoError, setLogoError] = useState(false);
@@ -31,7 +31,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
   });
 
   if (isLoading && tracks.length === 0) {
-      return <div className="p-10 text-center text-zinc-500">Loading beats...</div>;
+      return <div className="p-10 text-center text-zinc-500">{t('feed_loading')}</div>;
   }
 
   return (
@@ -58,13 +58,13 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
             onClick={() => setFilter('new')}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${filter === 'new' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}
           >
-            New
+            {t('feed_new')}
           </button>
           <button 
             onClick={() => setFilter('hot')}
             className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${filter === 'hot' ? 'bg-zinc-700 text-white' : 'text-zinc-500'}`}
           >
-            Hot
+            {t('feed_hot')}
           </button>
         </div>
       </header>
@@ -78,7 +78,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
             type="text" 
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search tracks, artists, genres..."
+            placeholder={t('feed_search_placeholder')}
             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-sm text-white focus:ring-1 focus:ring-violet-500 outline-none transition-all placeholder:text-zinc-600"
         />
       </div>
@@ -89,7 +89,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
         ))}
         {sortedTracks.length === 0 && (
             <div className="text-center py-20 text-zinc-600">
-                {searchQuery ? "No tracks found for that search." : "No tracks found. Upload the first one!"}
+                {searchQuery ? t('feed_no_results') : t('feed_empty')}
             </div>
         )}
       </div>

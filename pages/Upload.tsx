@@ -8,7 +8,7 @@ interface UploadProps {
 }
 
 const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
-  const { uploadTrack, isLoading } = useStore();
+  const { uploadTrack, isLoading, t } = useStore();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
@@ -52,7 +52,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
 
   return (
     <div className="p-4 pb-32">
-       <h1 className="text-2xl font-bold text-white mb-6 mt-2">Upload Track</h1>
+       <h1 className="text-2xl font-bold text-white mb-6 mt-2">{t('upload_title')}</h1>
        
        <form onSubmit={handleSubmit} className="space-y-6">
           
@@ -67,13 +67,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
                     <>
                         <img src={previewCover} alt="Preview" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                            <span className="text-xs text-white">Change</span>
+                            <span className="text-xs text-white">{t('upload_cover_change')}</span>
                         </div>
                     </>
                 ) : (
                     <>
                         <ImageIcon className="text-zinc-500 mb-2" size={24} />
-                        <span className="text-xs text-zinc-500">Add Cover</span>
+                        <span className="text-xs text-zinc-500">{t('upload_cover_add')}</span>
                     </>
                 )}
                 <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
@@ -93,13 +93,13 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
                             onClick={(e) => { e.stopPropagation(); setAudioFile(null); }}
                             className="mt-2 text-xs text-red-400 underline"
                          >
-                            Remove
+                            {t('upload_audio_remove')}
                          </button>
                      </div>
                  ) : (
                      <>
                         <UploadCloud className="text-zinc-500 mb-2" size={24} />
-                        <span className="text-xs text-zinc-500">Upload MP3/WAV</span>
+                        <span className="text-xs text-zinc-500">{t('upload_audio_placeholder')}</span>
                      </>
                  )}
                 <input ref={audioInputRef} type="file" accept="audio/*" className="hidden" onChange={handleAudioChange} />
@@ -108,19 +108,19 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
 
           <div className="space-y-4">
               <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Title</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">{t('upload_label_title')}</label>
                   <input 
                     required
                     type="text" 
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:ring-1 focus:ring-violet-500 outline-none"
-                    placeholder="Track Name"
+                    placeholder={t('upload_placeholder_title')}
                   />
               </div>
 
               <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Genre</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">{t('upload_label_genre')}</label>
                   <select 
                     value={genre}
                     onChange={(e) => setGenre(e.target.value)}
@@ -131,12 +131,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
               </div>
 
               <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">{t('upload_label_desc')}</label>
                   <textarea 
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-white focus:ring-1 focus:ring-violet-500 outline-none h-24 resize-none"
-                    placeholder="Tell us about your track..."
+                    placeholder={t('upload_placeholder_desc')}
                   />
               </div>
           </div>
@@ -149,10 +149,10 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
             {isLoading ? (
                 <>
                     <Loader2 className="animate-spin" size={20} />
-                    Uploading...
+                    {t('upload_btn_loading')}
                 </>
             ) : (
-                "Publish Track"
+                t('upload_btn')
             )}
           </button>
        </form>

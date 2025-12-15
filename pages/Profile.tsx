@@ -12,7 +12,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById } = useStore();
+  const { currentUser, tracks, fetchUserById, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
 
@@ -31,21 +31,21 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     loadUser();
   }, [targetUserId, currentUser, fetchUserById]);
 
-  if (loadingProfile) return <div className="p-10 text-center text-zinc-500">Loading profile...</div>;
-  if (!profileUser) return <div className="p-10 text-center text-zinc-500">User not found</div>;
+  if (loadingProfile) return <div className="p-10 text-center text-zinc-500">{t('profile_loading')}</div>;
+  if (!profileUser) return <div className="p-10 text-center text-zinc-500">{t('profile_not_found')}</div>;
 
   const isOwnProfile = currentUser?.id === profileUser.id;
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
 
   // Helper to get nice labels for links
   const getLinkLabel = (key: string, url: string) => {
-    if (key === 'spotify') return 'Spotify';
-    if (key === 'soundcloud') return 'SoundCloud';
-    if (key === 'yandex') return 'Yandex Music';
+    if (key === 'spotify') return t('link_spotify');
+    if (key === 'soundcloud') return t('link_soundcloud');
+    if (key === 'yandex') return t('link_yandex');
     if (key === 'other') {
-        if (url.includes('vk.com')) return 'VK';
-        if (url.includes('youtube.com')) return 'YouTube';
-        return 'Website';
+        if (url.includes('vk.com')) return t('link_vk');
+        if (url.includes('youtube.com')) return t('link_youtube');
+        return t('link_website');
     }
     return key;
   };
@@ -97,22 +97,22 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                {profileUser.firstName && <span className="text-sm text-zinc-400">{profileUser.firstName} {profileUser.lastName}</span>}
                
                <p className="text-center text-zinc-300 text-sm mt-3 max-w-xs whitespace-pre-wrap">
-                   {profileUser.bio || (isOwnProfile ? "Add a bio in settings..." : "No bio.")}
+                   {profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}
                </p>
 
                {/* Stats */}
                <div className="flex gap-8 mt-6 w-full justify-center pb-6 border-b border-zinc-800">
                    <div className="text-center">
                        <div className="text-lg font-bold text-white">{userTracks.length}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">Tracks</div>
+                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_tracks')}</div>
                    </div>
                    <div className="text-center">
                        <div className="text-lg font-bold text-white">{profileUser.stats.likesReceived}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">Likes</div>
+                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_likes')}</div>
                    </div>
                    <div className="text-center">
                        <div className="text-lg font-bold text-white">{profileUser.stats.totalPlays.toLocaleString()}</div>
-                       <div className="text-xs text-zinc-500 uppercase tracking-wide">Plays</div>
+                       <div className="text-xs text-zinc-500 uppercase tracking-wide">{t('profile_plays')}</div>
                    </div>
                </div>
 
@@ -135,7 +135,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                        );
                    })}
                    {Object.values(profileUser.links).every(l => !l) && (
-                       <p className="text-xs text-zinc-600 italic">No social links added.</p>
+                       <p className="text-xs text-zinc-600 italic">{t('profile_no_links')}</p>
                    )}
                </div>
            </div>
@@ -143,7 +143,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            {/* User Tracks */}
            <div className="mt-8">
                <h3 className="text-lg font-bold text-white mb-4">
-                   {isOwnProfile ? "My Tracks" : `${profileUser.username}'s Tracks`}
+                   {isOwnProfile ? t('profile_my_tracks') : `${profileUser.username}${t('profile_user_tracks')}`}
                </h3>
                <div className="space-y-2">
                    {userTracks.length > 0 ? (
@@ -158,7 +158,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                        ))
                    ) : (
                        <div className="text-center py-8 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800">
-                           <p className="text-zinc-500 text-sm">No tracks available.</p>
+                           <p className="text-zinc-500 text-sm">{t('profile_no_tracks')}</p>
                        </div>
                    )}
                </div>

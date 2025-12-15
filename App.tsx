@@ -10,11 +10,13 @@ import AudioPlayer from './components/AudioPlayer';
 import { Home, BarChart2, UploadCloud, User } from './components/ui/Icons';
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
+  const { t } = useStore();
+  
   const tabs = [
-    { id: 'feed', icon: Home, label: 'Feed' },
-    { id: 'charts', icon: BarChart2, label: 'Charts' },
-    { id: 'upload', icon: UploadCloud, label: 'Upload' },
-    { id: 'profile', icon: User, label: 'Profile' },
+    { id: 'feed', icon: Home, label: t('nav_feed') },
+    { id: 'charts', icon: BarChart2, label: t('nav_charts') },
+    { id: 'upload', icon: UploadCloud, label: t('nav_upload') },
+    { id: 'profile', icon: User, label: t('nav_profile') },
   ];
 
   return (

@@ -9,7 +9,7 @@ interface ChartsProps {
 }
 
 const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
-  const { getChartTracks } = useStore();
+  const { getChartTracks, t } = useStore();
   const [chartType, setChartType] = useState<'week' | 'month'>('week');
   const [chartTracks, setChartTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
 
   return (
     <div className="p-4 pb-32">
-      <h1 className="text-2xl font-bold text-white mb-6 mt-2">Top Charts</h1>
+      <h1 className="text-2xl font-bold text-white mb-6 mt-2">{t('charts_title')}</h1>
 
       {/* Tabs */}
       <div className="flex border-b border-zinc-800 mb-6">
@@ -34,14 +34,14 @@ const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
           onClick={() => setChartType('week')}
           className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${chartType === 'week' ? 'text-violet-400' : 'text-zinc-500'}`}
         >
-          Top of Week
+          {t('charts_week')}
           {chartType === 'week' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
         </button>
         <button
           onClick={() => setChartType('month')}
           className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${chartType === 'month' ? 'text-violet-400' : 'text-zinc-500'}`}
         >
-          Top of Month
+          {t('charts_month')}
           {chartType === 'month' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
         </button>
       </div>
@@ -54,7 +54,7 @@ const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
             </div>
         ) : chartTracks.length === 0 ? (
             <div className="text-center text-zinc-500 py-10">
-                Not enough data for this period yet.
+                {t('charts_empty')}
             </div>
         ) : (
             chartTracks.map((track, index) => (
@@ -74,7 +74,7 @@ const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
                 <div className="flex-1 min-w-0">
                 <h4 className="text-white font-medium truncate">{track.title}</h4>
                 <p className="text-zinc-500 text-xs truncate">
-                    {track.uploaderName} • {track.plays.toLocaleString()} plays (total)
+                    {track.uploaderName} • {track.plays.toLocaleString()} {t('track_plays')}
                 </p>
                 </div>
 
