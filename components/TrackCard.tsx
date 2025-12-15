@@ -48,12 +48,27 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     setShowMenu(false);
   };
 
-  const handleShare = (e: React.MouseEvent) => {
+  const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     
     // Generate Deep Link: https://t.me/botname/appname?startapp=track_UUID
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
     
+    // Try Native Share first (Mobile)
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: `Listen to ${track.title} on MoriMusic`,
+                text: `Check out this track by ${track.uploaderName} 🔥`,
+                url: deepLink
+            });
+            return; // Exit if native share successful
+        } catch (err) {
+            console.warn("Native share failed or cancelled", err);
+        }
+    }
+
+    // Fallback to Clipboard
     navigator.clipboard.writeText(deepLink).then(() => {
         setIsCopied(true);
         // Haptic feedback if available
@@ -120,7 +135,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                                 className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2"
                              >
                                 {isCopied ? <Check size={12} className="text-green-500"/> : <Link size={12} />}
-                                {isCopied ? "Copied!" : "Copy Link"}
+                                {isCopied ? "Copied!" : "Share Track"}
                              </button>
                              {isOwner && (
                                 <button 

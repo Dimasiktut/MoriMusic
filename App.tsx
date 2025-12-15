@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StoreProvider, useStore } from './services/store';
 import { TabView, Track } from './types';
 import Feed from './pages/Feed';
@@ -48,9 +48,13 @@ const MainLayout: React.FC = () => {
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
   
+  // Ref to ensure we only process the deep link once per session
+  const deepLinkProcessed = useRef(false);
+  
   // Logic to handle Deep Links (startapp param)
   useEffect(() => {
-    if (tracks.length > 0 && !currentTrack) {
+    // Only proceed if we have tracks, haven't processed the link yet, and no track is currently playing
+    if (tracks.length > 0 && !deepLinkProcessed.current) {
         // 1. Check Telegram Start Param
         // @ts-ignore
         const tgParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
@@ -65,11 +69,14 @@ const MainLayout: React.FC = () => {
             const trackId = startParam.replace('track_', '');
             const found = tracks.find(t => t.id === trackId);
             if (found) {
+                console.log("Deep link found, playing track:", found.title);
                 setCurrentTrack(found);
-                // Optional: Clear param so it doesn't replay on refresh logic if needed, 
-                // but for React SPA it's fine.
             }
         }
+        
+        // Mark as processed regardless of whether we found the track or not, 
+        // to prevent repeated attempts when tracks array updates.
+        deepLinkProcessed.current = true;
     }
   }, [tracks]); // Run when tracks are loaded
 
@@ -111,7 +118,7 @@ const MainLayout: React.FC = () => {
       case 'feed':
         return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       case 'charts':
-        return <Charts onPlayTrack={handlePlayTrack} />; // Charts needs onOpenProfile too? Ideally yes, but keeping props simple for now or Charts tracks need update
+        return <Charts onPlayTrack={handlePlayTrack} />;
       case 'upload':
         return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
       case 'profile':
