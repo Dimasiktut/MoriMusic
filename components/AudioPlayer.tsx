@@ -11,21 +11,26 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
-  const { incrementPlay } = useStore();
+  const { recordListen } = useStore();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  
+  // State for counting plays
+  const [hasCountedListen, setHasCountedListen] = useState(false);
 
   useEffect(() => {
     if (track && audioRef.current) {
       audioRef.current.src = track.audioUrl;
       audioRef.current.play().then(() => setIsPlaying(true)).catch(e => console.error("Playback failed", e));
-      incrementPlay(track.id);
+      
+      // Reset listen counter for new track
+      setHasCountedListen(false);
     } else {
         setIsPlaying(false);
     }
-  }, [track, incrementPlay]);
+  }, [track]); // Removed recordListen from deps to avoid loop
 
   const togglePlay = () => {
     if (!audioRef.current) return;
@@ -43,6 +48,22 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
       const total = audioRef.current.duration;
       setProgress((current / total) * 100);
       setDuration(total);
+
+      // --- LISTEN COUNTING LOGIC ---
+      // 1. Check if we haven't counted this session yet
+      // 2. Check if total duration is valid
+      // 3. Condition A: Played > 30 seconds
+      // 4. Condition B: Played > 30% of track
+      if (!hasCountedListen && total > 0 && track) {
+          const playedLongEnough = current > 30;
+          const playedSignificantPortion = (current / total) > 0.30;
+
+          if (playedLongEnough || playedSignificantPortion) {
+              setHasCountedListen(true);
+              recordListen(track.id);
+              // console.log("Listen recorded for:", track.title);
+          }
+      }
     }
   };
 
@@ -89,7 +110,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose }) => {
           </div>
 
           <div className="flex items-center gap-4">
-             {/* Using duration here fixes TS6133 */}
              <span className="text-xs text-zinc-500 font-mono">
                  {formatTime(audioRef.current?.currentTime || 0)} / {formatTime(duration)}
              </span>

@@ -20,9 +20,10 @@ interface StoreContextType {
   deleteTrack: (trackId: string) => Promise<void>;
   toggleLike: (trackId: string) => Promise<void>;
   addComment: (trackId: string, text: string) => Promise<void>;
-  incrementPlay: (trackId: string) => void;
+  recordListen: (trackId: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
   fetchUserById: (userId: number) => Promise<User | null>;
+  getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -125,8 +126,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const { data: sessionData } = await supabase.auth.getSession();
         if (!sessionData.session) {
            await supabase.auth.signInAnonymously().catch(err => {
-               // This is expected if Anon Auth is disabled in Supabase
-               console.warn("Anonymous sign-in skipped (check Supabase Auth settings):", err.message);
+               console.warn("Anonymous sign-in skipped:", err.message);
            });
         }
 
@@ -137,7 +137,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         if (tgUser) {
           userId = tgUser.id;
-          // Check if user exists in DB
           const { data: profile, error } = await supabase
             .from('profiles')
             .select('*')
@@ -156,7 +155,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }
             });
           } else if (error && error.code === 'PGRST116') { 
-             // Error PGRST116 is "Row not found", so we insert.
             const newUser = {
               id: userId,
               username: tgUser.username || `user_${userId}`,
@@ -179,12 +177,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                  setCurrentUser(null);
             }
           } else {
-             // Other errors (e.g. table missing)
              console.warn("Could not fetch profile.", error);
              setCurrentUser(null);
           }
         } else {
-          // Dev mode or non-Telegram environment
           console.warn("No Telegram User detected.");
           setCurrentUser(null);
         }
@@ -209,31 +205,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // --- TELEGRAM MEMBERSHIP CHECKER ---
   const checkGroupMembership = async (userId: number): Promise<boolean> => {
-    // If no config, assume dev mode or open access
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-        console.warn("Telegram Bot Token or Chat ID not set in constants.ts. Skipping membership check.");
         return true; 
     }
-
     try {
         const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}`;
-        
-        // We MUST use a CORS proxy because browsers block direct calls to Telegram API
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(telegramUrl)}`;
-
         const response = await fetch(proxyUrl);
         const data = await response.json();
-
-        if (!data.ok) {
-            console.error("Telegram API Error:", data.description);
-            // If error (e.g. bot not admin), we deny access to be safe, or check description
-            return false;
-        }
-
+        if (!data.ok) return false;
         const status = data.result.status;
-        // Allowed statuses
         const allowed = ['creator', 'administrator', 'member', 'restricted'];
-        
         return allowed.includes(status);
     } catch (error) {
         console.error("Failed to verify membership:", error);
@@ -243,21 +225,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
-
     try {
         setIsLoading(true);
-
-        // 1. CHECK MEMBERSHIP
         const isMember = await checkGroupMembership(currentUser.id);
-        
         if (!isMember) {
-            // Check if tokens are even set
             if (!TELEGRAM_BOT_TOKEN) {
                 alert("Ошибка конфигурации: TELEGRAM_BOT_TOKEN не установлен в коде.");
                 return;
             }
-
-            // Show UI Alert with Link
             const shouldJoin = confirm(
                 `🔒 Доступ запрещен\n\nЧтобы загружать треки, вы должны быть подписаны на наш канал ${TELEGRAM_CHAT_ID}.\n\nПодписаться сейчас?`
             );
@@ -270,25 +245,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     window.open(TELEGRAM_GROUP_LINK, '_blank');
                 }
             }
-            return; // Stop upload
+            return; 
         }
 
-        // --- PROCEED WITH UPLOAD ---
         const sanitize = (name: string) => name.replace(/[^a-zA-Z0-9.-]/g, '_');
-
-        // 2. Attempt to resolve a Storage Owner ID
         let storageOwnerId: string | undefined;
-
         try {
             const { data: { user } } = await supabase.auth.getUser();
             storageOwnerId = user?.id;
-            
             if (!storageOwnerId) {
                 const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously();
                 if (!anonError && anonData.user) {
                     storageOwnerId = anonData.user.id;
-                } else {
-                    console.warn("Could not authenticate with Supabase for upload. Proceeding with Telegram ID fallback.");
                 }
             }
         } catch (authErr) {
@@ -296,8 +264,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
 
         const uploadPathOwner = storageOwnerId || currentUser.id.toString();
-
-        // 3. Upload Audio
         const audioName = `${Date.now()}_${sanitize(data.audioFile.name)}`;
         const audioPath = `audio/${uploadPathOwner}/${audioName}`;
         
@@ -305,31 +271,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             .from('music')
             .upload(audioPath, data.audioFile);
         
-        if (audioError) {
-             throw new Error(`Audio upload failed: ${audioError.message}`);
-        }
+        if (audioError) throw new Error(`Audio upload failed: ${audioError.message}`);
         
         const { data: { publicUrl: audioUrl } } = supabase.storage.from('music').getPublicUrl(audioPath);
 
-        // 4. Upload Cover (if exists)
         let coverUrl = 'https://picsum.photos/400/400?random=default';
         if (data.coverFile) {
             const coverName = `${Date.now()}_${sanitize(data.coverFile.name)}`;
             const coverPath = `covers/${uploadPathOwner}/${coverName}`;
-            
             const { error: coverError } = await supabase.storage
                 .from('music')
                 .upload(coverPath, data.coverFile);
-            
-            if (coverError) {
-                console.warn("Cover upload failed (using default):", coverError.message);
-            } else {
+            if (!coverError) {
                 const { data: { publicUrl } } = supabase.storage.from('music').getPublicUrl(coverPath);
                 coverUrl = publicUrl;
             }
         }
 
-        // 5. Insert Track Record
         const { error: dbError } = await supabase.from('tracks').insert({
             uploader_id: currentUser.id,
             title: data.title,
@@ -341,34 +299,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         if (dbError) throw new Error(`Database insert failed: ${dbError.message}`);
-
-        // Refresh tracks
         await fetchTracks(currentUser.id);
-
     } catch (e: any) {
         console.error("Upload failed", e);
-        
-        const errorMsg = e.message || JSON.stringify(e);
-        let helpText = "Unknown error occurred.";
-
-        if (errorMsg.includes("row-level security") || errorMsg.includes("policy") || errorMsg.includes("permission denied")) {
-            helpText = `
-SETUP REQUIRED (Do one of these):
-
-OPTION A (Recommended):
-1. Go to Supabase Dashboard > Authentication > Providers
-2. Enable "Anonymous Sign-ins"
-3. Click Save
-
-OPTION B (Easier):
-1. Go to Supabase Dashboard > Storage > 'music' bucket > Policies
-2. Create Policy: "Give users access to all files"
-3. Select "All" operations (INSERT, SELECT, etc)
-4. Check "Anon" and "Authenticated" roles
-`;
-        }
-
-        alert(`Upload Failed!\n\n${errorMsg}\n\n${helpText}`);
+        alert(`Upload Failed!\n\n${e.message}`);
     } finally {
         setIsLoading(false);
     }
@@ -376,77 +310,56 @@ OPTION B (Easier):
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
-        // Fetch track details first to get file URLs for storage cleanup
         const { data: trackToDelete } = await supabase
             .from('tracks')
             .select('audio_url, cover_url')
             .eq('id', trackId)
             .single();
 
-        // 1. Manually delete dependencies (Comments & Likes) to prevent Foreign Key errors
-        // Note: Promise.all allows these to happen in parallel
         await Promise.all([
             supabase.from('comments').delete().eq('track_id', trackId),
-            supabase.from('track_likes').delete().eq('track_id', trackId)
+            supabase.from('track_likes').delete().eq('track_id', trackId),
+            // Also clean up history for this track
+            supabase.from('listen_history').delete().eq('track_id', trackId)
         ]);
 
-        // 2. Delete the track record from Database
-        const { error } = await supabase
-            .from('tracks')
-            .delete()
-            .eq('id', trackId);
-
+        const { error } = await supabase.from('tracks').delete().eq('id', trackId);
         if (error) throw error;
 
-        // 3. Update UI immediately
         setTracks(prev => prev.filter(t => t.id !== trackId));
 
-        // 4. Cleanup Storage (Best effort, runs in background)
         if (trackToDelete) {
             const getPath = (url: string) => {
                 if (!url) return null;
-                // Extracts path from .../music/folder/filename
                 const parts = url.split('/music/'); 
                 if (parts.length === 2) return parts[1];
                 return null;
             };
-
             const filesToRemove = [
                 getPath(trackToDelete.audio_url),
                 getPath(trackToDelete.cover_url)
             ].filter(p => p !== null && !p.includes('picsum.photos')) as string[];
-
             if (filesToRemove.length > 0) {
-                supabase.storage.from('music').remove(filesToRemove).catch(err => {
-                    console.warn("Background storage cleanup failed (non-critical):", err);
-                });
+                supabase.storage.from('music').remove(filesToRemove).catch(() => {});
             }
         }
-
     } catch (e: any) {
         console.error("Error deleting track", e);
-        alert(`Failed to delete track: ${e.message || "Unknown error"}`);
+        alert(`Failed to delete track: ${e.message}`);
     }
   }, []);
 
   const toggleLike = useCallback(async (trackId: string) => {
     if (!currentUser) return;
-
-    // Optimistic Update
     setTracks(prev => prev.map(t => {
       if (t.id === trackId) {
         const isLiked = !t.isLikedByCurrentUser;
-        return {
-          ...t,
-          isLikedByCurrentUser: isLiked,
-          likes: isLiked ? t.likes + 1 : t.likes - 1
-        };
+        return { ...t, isLikedByCurrentUser: isLiked, likes: isLiked ? t.likes + 1 : t.likes - 1 };
       }
       return t;
     }));
 
     try {
-        // DB Update
         const { data: existingLike } = await supabase
             .from('track_likes')
             .select('*')
@@ -466,7 +379,6 @@ OPTION B (Easier):
 
   const addComment = useCallback(async (trackId: string, text: string) => {
     if (!currentUser) return;
-
     try {
         const { data, error } = await supabase.from('comments').insert({
             track_id: trackId,
@@ -475,14 +387,10 @@ OPTION B (Easier):
             avatar: currentUser.photoUrl,
             text: text
         }).select().single();
-        
         if (error) throw error;
-
         if (data) {
             setTracks(prev => prev.map(t => {
-                if (t.id === trackId) {
-                    return { ...t, comments: [data, ...t.comments] };
-                }
+                if (t.id === trackId) return { ...t, comments: [data, ...t.comments] };
                 return t;
             }));
         }
@@ -491,27 +399,38 @@ OPTION B (Easier):
     }
   }, [currentUser]);
 
-  const incrementPlay = useCallback(async (trackId: string) => {
-    // Optimistic
+  // --- NEW LISTENING LOGIC ---
+  const recordListen = useCallback(async (trackId: string) => {
+    // 1. Optimistically update visual "Total Plays"
     setTracks(prev => prev.map(t => {
         if (t.id === trackId) return { ...t, plays: t.plays + 1 };
         return t;
     }));
 
     try {
-        const { data } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-        if (data) {
-            await supabase.from('tracks').update({ plays: data.plays + 1 }).eq('id', trackId);
+        // 2. Increment DB Total Plays
+        const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+        if (trackData) {
+            await supabase.from('tracks').update({ plays: trackData.plays + 1 }).eq('id', trackId);
+        }
+
+        // 3. Insert into History (for Charts & Uniqueness)
+        // If currentUser is null (guest), we can still record anonymous listen if we want, 
+        // but charts usually rely on user_id to deduplicate.
+        if (currentUser) {
+            await supabase.from('listen_history').insert({
+                track_id: trackId,
+                user_id: currentUser.id,
+                played_at: new Date().toISOString()
+            });
         }
     } catch (e) {
-        console.warn("Failed to update play count in DB", e);
+        console.warn("Failed to record listen", e);
     }
-  }, []);
+  }, [currentUser]);
 
   const updateProfile = useCallback(async (updates: Partial<User>) => {
     if (!currentUser) return;
-
-    // Map User type to DB columns
     const dbUpdates: any = {};
     if (updates.firstName) dbUpdates.first_name = updates.firstName;
     if (updates.lastName) dbUpdates.last_name = updates.lastName;
@@ -530,45 +449,18 @@ OPTION B (Easier):
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
     try {
-      // 1. Fetch Profile Basic Info (Simple select to avoid JOIN errors)
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      
-      if (error) {
-          console.error(`Error fetching profile for ID ${userId}:`, error.message);
-          return null;
-      }
-      
-      if (!profile) return null;
+      const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (error || !profile) return null;
 
-      // 2. Fetch Stats Manually to ensure robustness
+      const { count: uploads } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
       
-      // Uploads Count
-      const { count: uploads } = await supabase
-        .from('tracks')
-        .select('*', { count: 'exact', head: true })
-        .eq('uploader_id', userId);
-
-      // Total Plays (Sum plays of user's tracks)
-      const { data: userTracks } = await supabase
-        .from('tracks')
-        .select('id, plays')
-        .eq('uploader_id', userId);
-        
+      const { data: userTracks } = await supabase.from('tracks').select('id, plays').eq('uploader_id', userId);
       const totalPlays = userTracks?.reduce((sum, t) => sum + t.plays, 0) || 0;
 
-      // Likes Received (Count track_likes where track_id IN userTracks)
       let likesReceived = 0;
       if (userTracks && userTracks.length > 0) {
           const trackIds = userTracks.map(t => t.id);
-          // Note: .in() might fail if array is too large, but for a music app user tracks it's usually fine
-          const { count } = await supabase
-            .from('track_likes')
-            .select('*', { count: 'exact', head: true })
-            .in('track_id', trackIds);
+          const { count } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).in('track_id', trackIds);
           likesReceived = count || 0;
       }
 
@@ -580,16 +472,123 @@ OPTION B (Easier):
           photoUrl: profile.photo_url,
           bio: profile.bio,
           links: profile.links || {},
-          stats: {
-              uploads: uploads || 0,
-              likesReceived: likesReceived,
-              totalPlays: totalPlays
-          }
+          stats: { uploads: uploads || 0, likesReceived: likesReceived, totalPlays: totalPlays }
       };
     } catch (e) {
       console.error("Unexpected error in fetchUserById:", e);
       return null;
     }
+  }, []);
+
+  // --- NEW CHART CALCULATION LOGIC ---
+  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => {
+      try {
+          const now = new Date();
+          const startDate = new Date();
+          if (period === 'week') startDate.setDate(now.getDate() - 7);
+          else startDate.setDate(now.getDate() - 30);
+
+          // 1. Fetch listening history for the period
+          // Note: In a high-scale app, this aggregation should happen on DB (RPC or View)
+          // For now, we fetch relevant rows and aggregate client-side
+          const { data: history, error } = await supabase
+            .from('listen_history')
+            .select('track_id, user_id, played_at')
+            .gte('played_at', startDate.toISOString());
+
+          if (error) throw error;
+          if (!history || history.length === 0) return [];
+
+          // 2. Aggregate Unique Listens
+          // Logic: One unique listen per user per track per day is allowed
+          const scores: Record<string, number> = {};
+
+          history.forEach(record => {
+             const trackId = record.track_id;
+             const userId = record.user_id;
+             // Simple day string (YYYY-MM-DD)
+             const day = record.played_at.split('T')[0];
+             const key = `${trackId}-${userId}-${day}`;
+             
+             // We can optimize this by just counting distinct UserIDs per Track if the requirement 
+             // was just "unique per period". 
+             // But prompt says: "Unique listen per user per track per day".
+             // So if I listen on Monday and Tuesday, that counts as 2 unique listens for the Week chart.
+             
+             // We'll use a Set to track "User-Track-Day" combinations we've already counted
+             // Actually, simply counting the history rows might be wrong if we don't dedupe.
+             // But since we are calculating charts, let's create a map of TrackID -> Count
+          });
+
+          // Let's implement the specific rule:
+          // "Unique Play": Increments only once per user per track per day.
+          const uniquePlaysMap = new Set<string>(); // Stores "trackId_userId_date"
+          const trackScores: Record<string, number> = {};
+
+          history.forEach(h => {
+              const dateKey = h.played_at.split('T')[0]; // YYYY-MM-DD
+              const uniqueKey = `${h.track_id}_${h.user_id}_${dateKey}`;
+              
+              if (!uniquePlaysMap.has(uniqueKey)) {
+                  uniquePlaysMap.add(uniqueKey);
+                  trackScores[h.track_id] = (trackScores[h.track_id] || 0) + 1;
+              }
+          });
+
+          // 3. Sort IDs by score
+          const sortedTrackIds = Object.entries(trackScores)
+              .sort(([, scoreA], [, scoreB]) => scoreB - scoreA)
+              .slice(0, 50) // Top 50
+              .map(([id]) => id);
+
+          if (sortedTrackIds.length === 0) return [];
+
+          // 4. Fetch full track details for these IDs
+          // Reuse the existing track fetching logic via a fresh query to ensure we get uploader details
+          const { data: tracksData } = await supabase
+            .from('tracks')
+            .select(`*, profiles:uploader_id(username, photo_url)`)
+            .in('id', sortedTrackIds);
+
+          if (!tracksData) return [];
+
+          // 5. Map and Re-sort (because .in() doesn't preserve order)
+          // We also need likes count for display
+           const mappedChartTracks: Track[] = await Promise.all(tracksData.map(async (t: any) => {
+              // Basic minimal mapping for chart display
+              // We fetch likes count just for display, but sorting is determined by 'trackScores'
+              const { count: likes } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).eq('track_id', t.id);
+              
+              return {
+                  id: t.id,
+                  uploaderId: t.uploader_id,
+                  uploaderName: t.profiles?.username || 'Unknown',
+                  uploaderAvatar: t.profiles?.photo_url,
+                  title: t.title,
+                  description: t.description,
+                  genre: t.genre,
+                  coverUrl: t.cover_url,
+                  audioUrl: t.audio_url,
+                  duration: t.duration,
+                  createdAt: t.created_at,
+                  plays: t.plays, // Show TOTAL plays
+                  likes: likes || 0,
+                  comments: [],
+                  isLikedByCurrentUser: false // Not critical for chart view
+              };
+           }));
+
+           // Sort based on the calculated scores
+           return mappedChartTracks.sort((a, b) => {
+               const scoreA = trackScores[a.id] || 0;
+               const scoreB = trackScores[b.id] || 0;
+               return scoreB - scoreA;
+           });
+
+      } catch (e) {
+          console.error("Error calculating charts", e);
+          return [];
+      }
   }, []);
 
   return React.createElement(
@@ -603,9 +602,10 @@ OPTION B (Easier):
         deleteTrack,
         toggleLike,
         addComment,
-        incrementPlay,
+        recordListen,
         updateProfile,
-        fetchUserById
+        fetchUserById,
+        getChartTracks
       }
     },
     children
