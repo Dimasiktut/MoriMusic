@@ -491,28 +491,47 @@ OPTION B (Easier):
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
     try {
+      // 1. Fetch Profile Basic Info (Simple select to avoid JOIN errors)
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select(`
-          *,
-          tracks:tracks(count),
-          likesReceived:track_likes(count)
-        `)
+        .select('*')
         .eq('id', userId)
         .single();
       
-      if (error || !profile) return null;
+      if (error) {
+          console.error(`Error fetching profile for ID ${userId}:`, error.message);
+          return null;
+      }
+      
+      if (!profile) return null;
 
-      // We need to aggregate stats properly
-      // Note: This is a bit simplified. Real apps usually have triggers to update a stats table.
-      // Here we just mock stats from what we get or fetch simple counts.
+      // 2. Fetch Stats Manually to ensure robustness
       
-      // Get exact play count
-      const { data: tracksData } = await supabase.from('tracks').select('plays').eq('uploader_id', userId);
-      const totalPlays = tracksData?.reduce((acc, curr) => acc + curr.plays, 0) || 0;
-      
-      // Get exact upload count
-      const { count: uploadCount } = await supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId);
+      // Uploads Count
+      const { count: uploads } = await supabase
+        .from('tracks')
+        .select('*', { count: 'exact', head: true })
+        .eq('uploader_id', userId);
+
+      // Total Plays (Sum plays of user's tracks)
+      const { data: userTracks } = await supabase
+        .from('tracks')
+        .select('id, plays')
+        .eq('uploader_id', userId);
+        
+      const totalPlays = userTracks?.reduce((sum, t) => sum + t.plays, 0) || 0;
+
+      // Likes Received (Count track_likes where track_id IN userTracks)
+      let likesReceived = 0;
+      if (userTracks && userTracks.length > 0) {
+          const trackIds = userTracks.map(t => t.id);
+          // Note: .in() might fail if array is too large, but for a music app user tracks it's usually fine
+          const { count } = await supabase
+            .from('track_likes')
+            .select('*', { count: 'exact', head: true })
+            .in('track_id', trackIds);
+          likesReceived = count || 0;
+      }
 
       return {
           id: profile.id,
@@ -523,13 +542,13 @@ OPTION B (Easier):
           bio: profile.bio,
           links: profile.links || {},
           stats: {
-              uploads: uploadCount || 0,
-              likesReceived: 0, // Difficult to count effectively without a separate stats table, leaving as 0 for external for now or use what we have
+              uploads: uploads || 0,
+              likesReceived: likesReceived,
               totalPlays: totalPlays
           }
       };
     } catch (e) {
-      console.error("Error fetching user profile", e);
+      console.error("Unexpected error in fetchUserById:", e);
       return null;
     }
   }, []);
