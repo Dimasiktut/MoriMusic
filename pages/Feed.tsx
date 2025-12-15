@@ -13,6 +13,7 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
   const { tracks, isLoading } = useStore();
   const [filter, setFilter] = useState<'new' | 'hot'>('new');
   const [searchQuery, setSearchQuery] = useState('');
+  const [logoError, setLogoError] = useState(false);
 
   // 1. Filter by Search
   const searchedTracks = tracks.filter(t => 
@@ -36,22 +37,20 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
   return (
     <div className="p-4 pb-32">
       <header className="flex justify-between items-center mb-6 mt-2">
-        <div className="flex items-center gap-2">
-            {/* Logo Placeholder */}
-            <img 
-                src="/mori-music-logo-play-music.png" 
-                alt="MoriMusic" 
-                className="h-12 w-auto object-contain drop-shadow-lg" 
-                onError={(e) => {
-                    // Fallback if image not found
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                }}
-            />
-            {/* Fallback Text */}
-            <h1 className="hidden text-2xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
-               MoriMusic
-            </h1>
+        <div className="flex items-center gap-3">
+            {/* Logo Logic: Try to show image, fallback to text if fails */}
+            {!logoError ? (
+                <img 
+                    src="/mori-music-logo-play-music.png" 
+                    alt="MoriMusic" 
+                    className="h-14 w-auto object-contain drop-shadow-md" 
+                    onError={() => setLogoError(true)}
+                />
+            ) : (
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-fuchsia-400 bg-clip-text text-transparent">
+                   MoriMusic
+                </h1>
+            )}
         </div>
 
         <div className="flex bg-zinc-900 rounded-lg p-1 border border-white/5">
