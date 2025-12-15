@@ -1,4 +1,4 @@
-import { Track, User } from './types';
+import { User } from './types';
 
 export const MOCK_USER_ID = 0;
 
