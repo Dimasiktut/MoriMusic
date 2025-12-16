@@ -60,7 +60,22 @@ export interface Playlist {
   trackCount?: number; 
 }
 
-export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings';
+export interface Concert {
+  id: string;
+  title: string;
+  artistId: number;
+  artistName: string;
+  artistAvatar: string;
+  coverUrl: string;
+  startTime: string; // ISO
+  status: 'live' | 'upcoming' | 'ended';
+  viewers: number;
+  streamUrl?: string; // Mock URL for audio/video
+  donationsGoal?: number;
+  currentDonations?: number;
+}
+
+export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings' | 'concerts';
 
 export type ChartType = 'week' | 'month';
 

@@ -1,3 +1,4 @@
+
 import { User } from './types';
 
 export const MOCK_USER_ID = 0;
@@ -44,6 +45,7 @@ export const TRANSLATIONS = {
     nav_charts: 'Charts',
     nav_upload: 'Upload',
     nav_profile: 'Profile',
+    nav_concerts: 'Live', // New
     
     feed_new: 'New',
     feed_hot: 'Hot',
@@ -135,6 +137,16 @@ export const TRANSLATIONS = {
     settings_saving: 'Saving...',
     settings_error: 'Failed to save changes.',
     
+    // Concerts
+    concerts_title: 'Live Stages',
+    concerts_live_now: 'Live Now',
+    concerts_upcoming: 'Upcoming',
+    concerts_viewers: 'viewers',
+    concerts_donate: 'Send Stars',
+    concerts_chat_placeholder: 'Say something...',
+    concerts_end: 'Stream Ended',
+    concerts_donate_success: 'Stars Sent!',
+    
     link_spotify: 'Spotify',
     link_soundcloud: 'SoundCloud',
     link_yandex: 'Yandex Music',
@@ -147,6 +159,7 @@ export const TRANSLATIONS = {
     nav_charts: 'Чарты',
     nav_upload: 'Загрузка',
     nav_profile: 'Профиль',
+    nav_concerts: 'Live',
     
     feed_new: 'Новое',
     feed_hot: 'Топ',
@@ -237,6 +250,15 @@ export const TRANSLATIONS = {
     settings_save: 'Сохранить',
     settings_saving: 'Сохранение...',
     settings_error: 'Ошибка сохранения.',
+
+    concerts_title: 'Live Сцена',
+    concerts_live_now: 'В эфире',
+    concerts_upcoming: 'Афиша',
+    concerts_viewers: 'зрителей',
+    concerts_donate: 'Донат',
+    concerts_chat_placeholder: 'Написать в чат...',
+    concerts_end: 'Трансляция завершена',
+    concerts_donate_success: 'Звезды отправлены!',
 
     link_spotify: 'Spotify',
     link_soundcloud: 'SoundCloud',

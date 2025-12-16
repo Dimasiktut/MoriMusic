@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StoreProvider, useStore } from './services/store';
 import { TabView, Track } from './types';
@@ -5,9 +6,10 @@ import Feed from './pages/Feed';
 import Charts from './pages/Charts';
 import Upload from './pages/Upload';
 import Profile from './pages/Profile';
+import Concerts from './pages/Concerts'; // Import Concerts Page
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
-import { Home, BarChart2, UploadCloud, User } from './components/ui/Icons';
+import { Home, BarChart2, UploadCloud, User, Video } from './components/ui/Icons'; // Import Video icon
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
   const { t } = useStore();
@@ -15,6 +17,7 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
   const tabs = [
     { id: 'feed', icon: Home, label: t('nav_feed') },
     { id: 'charts', icon: BarChart2, label: t('nav_charts') },
+    { id: 'concerts', icon: Video, label: t('nav_concerts') }, // New Tab
     { id: 'upload', icon: UploadCloud, label: t('nav_upload') },
     { id: 'profile', icon: User, label: t('nav_profile') },
   ];
@@ -42,30 +45,21 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks } = useStore(); // Access store to find deep linked track
+  const { tracks } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   
-  // Navigation State
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
   
-  // Ref to ensure we only process the deep link once per session
   const deepLinkProcessed = useRef(false);
   
-  // Logic to handle Deep Links (startapp param)
   useEffect(() => {
-    // Only proceed if we have tracks, haven't processed the link yet, and no track is currently playing
     if (tracks.length > 0 && !deepLinkProcessed.current) {
-        // 1. Check Telegram SDK Start Param (Native Telegram App)
         // @ts-ignore
         const tgParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-        
-        // 2. Check URL Search Param (Direct Browser Link: ?startapp=...)
         const urlParams = new URLSearchParams(window.location.search);
         const webParam = urlParams.get('startapp');
-
-        // 3. Check Hash Param (Sometimes Telegram passes it in hash: #tgWebAppData=...&tgWebAppStartParam=...)
         const hashParams = new URLSearchParams(window.location.hash.slice(1));
         const hashParam = hashParams.get('tgWebAppStartParam');
 
@@ -75,17 +69,12 @@ const MainLayout: React.FC = () => {
             const trackId = startParam.replace('track_', '');
             const found = tracks.find(t => t.id === trackId);
             if (found) {
-                console.log("Deep link found, playing track:", found.title);
                 setCurrentTrack(found);
-            } else {
-                console.warn("Deep link track not found in loaded tracks:", trackId);
             }
         }
-        
-        // Mark as processed regardless of whether we found the track or not
         deepLinkProcessed.current = true;
     }
-  }, [tracks]); // Run when tracks are loaded
+  }, [tracks]);
 
   const handlePlayTrack = (track: Track) => {
     setCurrentTrack(track);
@@ -97,14 +86,12 @@ const MainLayout: React.FC = () => {
   };
 
   const handleTabChange = (tab: TabView) => {
-    // Reset overlays when switching main tabs
     setOverlayView('none');
     setViewingUserId(null);
     setActiveTab(tab);
   };
 
   const renderContent = () => {
-    // Overlays take precedence
     if (overlayView === 'settings') {
         return <SettingsPage onBack={() => setOverlayView('none')} />;
     }
@@ -113,19 +100,20 @@ const MainLayout: React.FC = () => {
         return (
             <Profile 
                 onPlayTrack={handlePlayTrack} 
-                onEditProfile={() => { /* Should not happen if logic is correct, but safe fallback */ }}
+                onEditProfile={() => { }}
                 onBack={() => { setOverlayView('none'); setViewingUserId(null); }}
                 targetUserId={viewingUserId}
             />
         );
     }
 
-    // Main Tabs
     switch (activeTab) {
       case 'feed':
         return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       case 'charts':
         return <Charts onPlayTrack={handlePlayTrack} />;
+      case 'concerts': // New Route
+        return <Concerts />;
       case 'upload':
         return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
       case 'profile':
@@ -138,19 +126,16 @@ const MainLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans selection:bg-violet-500/30">
       <main className="max-w-md mx-auto min-h-screen relative shadow-2xl shadow-black/50 overflow-hidden bg-zinc-950">
-        {/* Content Area */}
         <div className="h-full overflow-y-auto custom-scrollbar">
             {renderContent()}
         </div>
 
-        {/* Floating Player */}
         <AudioPlayer 
             track={currentTrack} 
             onClose={() => setCurrentTrack(null)} 
             onOpenProfile={handleOpenProfile}
         />
 
-        {/* Bottom Nav - Hide if in overlay mode */}
         {overlayView === 'none' && (
             <Navigation activeTab={activeTab} onTabChange={handleTabChange} />
         )}

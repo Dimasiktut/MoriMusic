@@ -39,7 +39,12 @@ import {
   Headphones,
   Zap,
   TrendingUp,
-  Send
+  Send,
+  Video,
+  Gift,
+  Star,
+  Calendar,
+  Users
 } from 'lucide-react';
 
 export {
@@ -82,5 +87,10 @@ export {
   Headphones,
   Zap,
   TrendingUp,
-  Send
+  Send,
+  Video,
+  Gift,
+  Star,
+  Calendar,
+  Users
 };
