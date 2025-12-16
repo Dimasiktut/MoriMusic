@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment, Playlist, Concert } from '../types';
-import { INITIAL_USER, TRANSLATIONS, Language } from '../constants';
+import { INITIAL_USER, TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
 import { supabase } from './supabase';
 
 interface UploadTrackData {
@@ -356,14 +356,55 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const checkGroupMembership = useCallback(async (userId: number): Promise<boolean> => { 
-      // Placeholder for subscription check
-      console.log(`Checking membership for ${userId}`);
-      return true; 
+      // If we don't have tokens, fail safe (block upload) or allow (dev mode). 
+      // For a "subscription required" feature, we block.
+      if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+          console.error("Telegram Bot Token or Chat ID is missing in constants.ts");
+          return false;
+      }
+
+      console.log(`Checking membership for ${userId} in ${TELEGRAM_CHAT_ID}...`);
+
+      try {
+          // We add a timestamp to prevent browser/network caching of the response.
+          // This ensures we check the REAL status every single time.
+          const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}&_=${Date.now()}`;
+          
+          const response = await fetch(url);
+          const data = await response.json();
+
+          if (!data.ok) {
+              console.error("Telegram API Error:", data.description);
+              // If user is not found or chat not found, they are definitely not a member.
+              return false;
+          }
+
+          const status = data.result?.status;
+          console.log("User status:", status);
+
+          // Allowed statuses: creator, administrator, member
+          // 'restricted' might be allowed if they are still a member (is_member=true)
+          const validStatuses = ['creator', 'administrator', 'member'];
+          
+          if (validStatuses.includes(status)) return true;
+          
+          // Check for restricted but still member (e.g. muted)
+          if (status === 'restricted' && data.result.is_member) return true;
+
+          return false; // left, kicked, or unknown
+
+      } catch (e) {
+          console.error("Membership check failed (Network/CORS):", e);
+          // NOTE: If this fails due to CORS in production, you MUST use a backend proxy.
+          // For now, we return false to enforce security as requested.
+          return false; 
+      }
   }, []);
 
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
     
+    // Always check membership fresh
     const isMember = await checkGroupMembership(currentUser.id);
     if (!isMember) {
         alert(t('upload_sub_required'));
@@ -417,6 +458,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const uploadAlbum = useCallback(async (files: File[], commonData: any) => {
     if (!currentUser) return;
+
+    // ADDED: Membership check for albums too
+    const isMember = await checkGroupMembership(currentUser.id);
+    if (!isMember) {
+        alert(t('upload_sub_required'));
+        return;
+    }
+
     setIsLoading(true);
     try {
         // Ensure profile exists for album too
@@ -450,10 +499,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await fetchTracks(currentUser.id);
     } catch (e) {
         console.error("Album upload failed", e);
+        alert("Upload failed.");
     } finally { 
         setIsLoading(false); 
     }
-  }, [currentUser, fetchTracks]);
+  }, [currentUser, fetchTracks, checkGroupMembership, t]);
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
