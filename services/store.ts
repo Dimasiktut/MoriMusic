@@ -1,7 +1,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment, Playlist, Concert } from '../types';
-import { INITIAL_USER, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TRANSLATIONS, Language } from '../constants';
+import { INITIAL_USER, TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
 
 interface UploadTrackData {
@@ -195,12 +195,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // --- DONATION LOGIC (Stars) ---
   const donateToConcert = useCallback(async (concertId: string, amount: number): Promise<boolean> => {
-      // 1. In real app: Backend generates Invoice Link -> Telegram.WebApp.openInvoice(url)
-      // 2. Developer Commission: The backend logic would split the payment. 
-      //    E.g. 100 stars incoming -> 80 to Artist Balance, 20 to Platform Balance.
-      
       console.log(`Processing donation of ${amount} stars for concert ${concertId}`);
-      
       return new Promise((resolve) => {
           setTimeout(() => {
               setConcerts(prev => prev.map(c => {
@@ -214,7 +209,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
   }, []);
 
-  // ... (Previous playlist functions remain the same, adding them for context)
   const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
           const { data } = await supabase.from('playlists').select('*').eq('user_id', userId).order('created_at', { ascending: false });
@@ -281,10 +275,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (tgUser) {
           userId = tgUser.id;
           
-          // 1. Try to find existing profile
-          let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+          let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
           
-          // 2. If no profile exists, create one
+          // Try to create profile if not exists
           if (!profile) {
               const newProfile = {
                   id: userId,
@@ -297,9 +290,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               };
               
               const { error: insertError } = await supabase.from('profiles').insert(newProfile);
-              
               if (!insertError) {
-                  // Use the created profile data
                   // @ts-ignore
                   profile = newProfile;
               } else {
@@ -324,7 +315,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setMyPlaylists(await fetchUserPlaylists(userId));
             setSavedPlaylists(await fetchSavedPlaylists(userId));
           } else {
-             // Fallback if DB insert failed (rare)
              setCurrentUser({ ...INITIAL_USER, id: userId, username: tgUser.username || `user_${userId}`, firstName: tgUser.first_name, photoUrl: tgUser.photo_url });
           }
         }
@@ -339,9 +329,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initApp();
   }, [fetchTracks, fetchUserPlaylists, fetchSavedPlaylists, fetchConcerts]);
 
-  // ... (Upload helpers same as before)
-  const checkGroupMembership = async (userId: number): Promise<boolean> => { return true; }; 
-  
   const uploadImage = useCallback(async (file: File, bucket: string, path: string): Promise<string> => {
       const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
       if (error) throw error;
@@ -368,10 +355,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
   };
 
+  const checkGroupMembership = useCallback(async (userId: number): Promise<boolean> => { 
+      // Placeholder for subscription check
+      console.log(`Checking membership for ${userId}`);
+      return true; 
+  }, []);
+
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
+    
+    const isMember = await checkGroupMembership(currentUser.id);
+    if (!isMember) {
+        alert(t('upload_sub_required'));
+        return;
+    }
+
     setIsLoading(true);
     try {
+        // ROBUST CHECK: Ensure user exists in DB before inserting track
+        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
+        if (!existingProfile) {
+            console.log("Profile missing in DB, attempting create...", currentUser.id);
+            const { error: insertErr } = await supabase.from('profiles').insert({
+                id: currentUser.id,
+                username: currentUser.username,
+                first_name: currentUser.firstName,
+                last_name: currentUser.lastName,
+                photo_url: currentUser.photoUrl,
+                bio: currentUser.bio || '',
+                links: currentUser.links || {}
+            });
+            if (insertErr) {
+                console.error("FATAL: Could not create user profile before track upload", insertErr);
+                throw new Error("Could not register user. Please restart the app.");
+            }
+        }
+
         let audioUrl = data.existingAudioUrl || '';
         if (data.audioFile && !audioUrl) audioUrl = await _uploadFileToStorage(data.audioFile, `audio/${currentUser.id}`);
         let coverUrl = data.existingCoverUrl || 'https://picsum.photos/400/400?random=default';
@@ -390,15 +409,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await fetchTracks(currentUser.id);
     } catch (e) {
         console.error("Upload failed", e);
+        alert("Upload failed. If you are new, try restarting the app.");
     } finally { 
         setIsLoading(false); 
     }
-  }, [currentUser, fetchTracks]);
+  }, [currentUser, fetchTracks, checkGroupMembership, t]);
 
   const uploadAlbum = useCallback(async (files: File[], commonData: any) => {
     if (!currentUser) return;
     setIsLoading(true);
     try {
+        // Ensure profile exists for album too
+        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
+        if (!existingProfile) {
+            await supabase.from('profiles').insert({
+                id: currentUser.id,
+                username: currentUser.username,
+                first_name: currentUser.firstName,
+                last_name: currentUser.lastName,
+                photo_url: currentUser.photoUrl,
+                bio: currentUser.bio || '',
+                links: currentUser.links || {}
+            });
+        }
+
         let commonCoverUrl: string | undefined = undefined;
         if (commonData.coverFile) commonCoverUrl = await _uploadFileToStorage(commonData.coverFile, `covers/${currentUser.id}`);
         for (const file of files) {
@@ -429,13 +463,101 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {}
   }, []);
 
-  const downloadTrack = useCallback(async (track: Track) => { /* Same as before */ }, []);
-  const toggleLike = useCallback(async (trackId: string) => { /* Same as before */ }, [currentUser]);
-  const addComment = useCallback(async (trackId: string, text: string) => { /* Same as before */ }, [currentUser]);
-  const recordListen = useCallback(async (trackId: string) => { /* Same as before */ }, [currentUser]);
-  const updateProfile = useCallback(async (updates: Partial<User>) => { /* Same as before */ }, [currentUser]);
-  const fetchUserById = useCallback(async (userId: number): Promise<User | null> => { /* Same as before */ return null; }, []);
-  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => { return []; }, []);
+  const downloadTrack = useCallback(async (track: Track) => { 
+      const link = document.createElement('a');
+      link.href = track.audioUrl;
+      link.download = `${track.title}.mp3`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  }, []);
+
+  const toggleLike = useCallback(async (trackId: string) => { 
+      if (!currentUser) return;
+      // Optimistic
+      setTracks(prev => prev.map(t => {
+          if (t.id === trackId) {
+             return { ...t, likes: t.isLikedByCurrentUser ? t.likes - 1 : t.likes + 1, isLikedByCurrentUser: !t.isLikedByCurrentUser };
+          }
+          return t;
+      }));
+      // DB
+      const { data } = await supabase.from('track_likes').select('*').eq('user_id', currentUser.id).eq('track_id', trackId).maybeSingle();
+      if (data) {
+          await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+      } else {
+          await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+      }
+  }, [currentUser]);
+
+  const addComment = useCallback(async (trackId: string, text: string) => { 
+      if (!currentUser) return;
+      const { data, error } = await supabase.from('comments').insert({
+          track_id: trackId,
+          user_id: currentUser.id,
+          text: text
+      }).select().single();
+      
+      if (!error && data) {
+          const newComment: Comment = {
+             id: data.id,
+             userId: currentUser.id,
+             username: currentUser.username,
+             avatar: currentUser.photoUrl,
+             text: text,
+             createdAt: data.created_at
+          };
+          setTracks(prev => prev.map(t => t.id === trackId ? { ...t, comments: [newComment, ...(t.comments || [])] } : t));
+      }
+  }, [currentUser]);
+
+  const recordListen = useCallback(async (trackId: string) => { 
+      if (!currentUser) return;
+      await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
+      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, plays: t.plays + 1 } : t));
+  }, [currentUser]);
+
+  const updateProfile = useCallback(async (updates: Partial<User>) => { 
+      if (!currentUser) return;
+      const { error } = await supabase.from('profiles').update({
+          first_name: updates.firstName,
+          last_name: updates.lastName,
+          bio: updates.bio,
+          photo_url: updates.photoUrl,
+          header_url: updates.headerUrl,
+          links: updates.links
+      }).eq('id', currentUser.id);
+
+      if (!error) {
+          setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+      }
+  }, [currentUser]);
+
+  const fetchUserById = useCallback(async (userId: number): Promise<User | null> => { 
+      const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+      if (data) {
+          const stats = { uploads: 0, likesReceived: 0, totalPlays: 0 }; 
+          return {
+              id: data.id,
+              username: data.username,
+              firstName: data.first_name,
+              lastName: data.last_name,
+              photoUrl: data.photo_url,
+              headerUrl: data.header_url,
+              bio: data.bio,
+              links: data.links || {},
+              stats: stats,
+              badges: calculateBadges(stats, data.isVerified)
+          };
+      }
+      return null; 
+  }, []);
+
+  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => { 
+      console.log(`Getting charts for ${period}`);
+      const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
+      return mapTracksData(data || [], currentUser?.id);
+  }, [currentUser, mapTracksData]);
 
   const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
