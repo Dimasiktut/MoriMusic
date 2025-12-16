@@ -81,6 +81,33 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return badges;
   };
 
+  // Helper to calculate stats from DB
+  const getUserStats = useCallback(async (userId: number) => {
+      // 1. Get user's tracks to count uploads and sum plays
+      const { data: userTracks, error } = await supabase
+        .from('tracks')
+        .select('id, plays')
+        .eq('uploader_id', userId);
+
+      if (error || !userTracks) return { uploads: 0, totalPlays: 0, likesReceived: 0 };
+
+      const uploads = userTracks.length;
+      const totalPlays = userTracks.reduce((sum, t) => sum + t.plays, 0);
+      const trackIds = userTracks.map(t => t.id);
+
+      // 2. Count likes received on these tracks
+      let likesReceived = 0;
+      if (trackIds.length > 0) {
+        const { count } = await supabase
+          .from('track_likes')
+          .select('*', { count: 'exact', head: true })
+          .in('track_id', trackIds);
+        likesReceived = count || 0;
+      }
+
+      return { uploads, totalPlays, likesReceived };
+  }, []);
+
   // Helper to map DB track to UI Track
   const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
@@ -299,7 +326,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
 
           if (profile) {
-            const stats = { uploads: 0, likesReceived: 0, totalPlays: 0 };
+            // REAL STATS CALCULATION
+            const stats = await getUserStats(profile.id);
+            
             setCurrentUser({
               id: profile.id, 
               username: profile.username, 
@@ -327,7 +356,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       } catch (e) { console.error(e); } finally { setIsLoading(false); }
     };
     initApp();
-  }, [fetchTracks, fetchUserPlaylists, fetchSavedPlaylists, fetchConcerts]);
+  }, [fetchTracks, fetchUserPlaylists, fetchSavedPlaylists, fetchConcerts, getUserStats]);
 
   const uploadImage = useCallback(async (file: File, bucket: string, path: string): Promise<string> => {
       const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
@@ -366,11 +395,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.log(`Checking membership for ${userId} in ${TELEGRAM_CHAT_ID}...`);
 
       try {
-          // We add a timestamp to prevent browser/network caching of the response.
-          // This ensures we check the REAL status every single time.
+          // Add timestamp and NO-CACHE header to ensure we get real status every time
           const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}&_=${Date.now()}`;
           
-          const response = await fetch(url);
+          const response = await fetch(url, { cache: 'no-store' }); // FORCE NO CACHE
           const data = await response.json();
 
           if (!data.ok) {
@@ -586,7 +614,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => { 
       const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (data) {
-          const stats = { uploads: 0, likesReceived: 0, totalPlays: 0 }; 
+          // Calculate stats for this user
+          const stats = await getUserStats(data.id);
+          
           return {
               id: data.id,
               username: data.username,
@@ -601,7 +631,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           };
       }
       return null; 
-  }, []);
+  }, [getUserStats]);
 
   const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => { 
       console.log(`Getting charts for ${period}`);
