@@ -116,33 +116,54 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const mapTracksData = useCallback((rawTracks: any[], userLikes: string[] = []): Track[] => {
       if (!rawTracks) return [];
-      return rawTracks.map((trk: any) => ({
-          id: trk.id, 
-          uploaderId: trk.uploader_id, 
-          uploaderName: trk.profiles?.username || 'Mori Artist',
-          uploaderAvatar: trk.profiles?.photo_url, 
-          title: trk.title, 
-          description: trk.description,
-          genre: trk.genre, 
-          coverUrl: trk.cover_url, 
-          audioUrl: trk.audio_url, 
-          duration: trk.duration || 0,
-          createdAt: trk.created_at, 
-          // Robust count checking for different DB structures
-          plays: typeof trk.plays === 'number' ? trk.plays : (trk.play_count || 0), 
-          likes: typeof trk.likes_count === 'number' ? trk.likes_count : (trk.likes || 0), 
-          comments: [], 
-          isLikedByCurrentUser: userLikes.includes(trk.id), 
-          isVerifiedUploader: !!trk.profiles?.is_verified || (trk.plays || 0) > 1000 
-      }));
+      return rawTracks.map((trk: any) => {
+          // Robust mapping of metrics from various possible DB schemas
+          const plays = typeof trk.plays === 'number' ? trk.plays : (trk.play_count || 0);
+          const likes = typeof trk.likes_count === 'number' ? trk.likes_count : (trk.likes || 0);
+          
+          // Comments can be an array of objects or an aggregate count
+          const commentsData = trk.comments || [];
+          const commentCount = Array.isArray(commentsData) ? commentsData.length : (trk.comments_count || 0);
+          
+          return {
+              id: trk.id, 
+              uploaderId: trk.uploader_id, 
+              uploaderName: trk.profiles?.username || 'Mori Artist',
+              uploaderAvatar: trk.profiles?.photo_url, 
+              title: trk.title, 
+              description: trk.description,
+              genre: trk.genre, 
+              coverUrl: trk.cover_url, 
+              audioUrl: trk.audio_url, 
+              duration: trk.duration || 0,
+              createdAt: trk.created_at, 
+              plays: plays, 
+              likes: likes, 
+              // Convert count or array to structure expected by UI
+              comments: Array.isArray(commentsData) ? commentsData.map((c: any) => ({
+                id: c.id,
+                userId: c.user_id,
+                username: c.profiles?.username || 'User',
+                avatar: c.profiles?.photo_url,
+                text: c.text,
+                createdAt: c.created_at
+              })) : [],
+              isLikedByCurrentUser: userLikes.includes(trk.id), 
+              isVerifiedUploader: !!trk.profiles?.is_verified || plays > 1000 
+          };
+      });
   }, []);
 
   const fetchTracks = useCallback(async (userId?: number) => {
     try {
-      // Fix: Removed is_verified from join as it's causing issues
+      // Include comments count in the select for initial display
       const { data: tracksData, error } = await supabase
         .from('tracks')
-        .select('*, profiles:uploader_id(username, photo_url)')
+        .select(`
+          *, 
+          profiles:uploader_id(username, photo_url),
+          comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
+        `)
         .order('created_at', { ascending: false })
         .limit(30);
       
@@ -211,6 +232,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           })));
       }
     } catch (e) {}
+  }, []);
+
+  const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
+    try {
+      const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      if (error || !profile) return null;
+
+      // Aggregating user stats
+      const [
+          { count: uploads }, 
+          { data: playsData }, 
+          { count: likesReceived }
+      ] = await Promise.all([
+          supabase.from('tracks').select('*', { count: 'exact', head: true }).eq('uploader_id', userId),
+          supabase.from('tracks').select('plays').eq('uploader_id', userId),
+          // Fetch likes across all tracks uploaded by this user
+          supabase.from('track_likes').select('*, tracks!inner(uploader_id)', { count: 'exact', head: true }).eq('tracks.uploader_id', userId)
+      ]);
+
+      const totalPlays = playsData?.reduce((acc, curr) => acc + (curr.plays || 0), 0) || 0;
+
+      return {
+          id: userId, 
+          username: profile.username, 
+          firstName: profile.first_name, 
+          lastName: profile.last_name,
+          photoUrl: profile.photo_url, 
+          headerUrl: profile.header_url, 
+          bio: profile.bio, 
+          links: profile.links || {},
+          stats: { 
+              uploads: uploads || 0, 
+              likesReceived: likesReceived || 0, 
+              totalPlays: totalPlays 
+          }, 
+          isVerified: !!profile.is_verified
+      };
+    } catch (e) { return null; }
   }, []);
 
   const uploadImage = async (file: File, bucket: string, path: string): Promise<string> => {
@@ -308,18 +367,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {}
   };
 
-  const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
-    try {
-      const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-      if (error || !profile) return null;
-      return {
-          id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
-          photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
-          stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }, isVerified: !!profile.is_verified
-      };
-    } catch (e) { return null; }
-  }, []);
-
   const recordListen = async (trackId: string) => {
     if (!currentUser) return;
     try {
@@ -400,7 +447,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> => {
-    const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url))').eq('playlist_id', playlistId);
+    const { data } = await supabase.from('playlist_items').select(`
+        tracks(
+          *, 
+          profiles:uploader_id(username, photo_url),
+          comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
+        )
+    `).eq('playlist_id', playlistId);
     return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], []);
   };
 
@@ -434,29 +487,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addComment = async (trackId: string, text: string) => {
     if (!currentUser) return;
-    const { data, error } = await supabase.from('comments').insert({ track_id: trackId, user_id: currentUser.id, text }).select().single();
+    const { data, error } = await supabase.from('comments').insert({ track_id: trackId, user_id: currentUser.id, text }).select('*, profiles:user_id(username, photo_url)').single();
     if (!error && data) {
-        const newComment: Comment = { id: data.id, userId: currentUser.id, username: currentUser.username, avatar: currentUser.photoUrl, text, createdAt: data.created_at };
+        const newComment: Comment = { 
+            id: data.id, 
+            userId: currentUser.id, 
+            username: currentUser.username, 
+            avatar: currentUser.photoUrl, 
+            text, 
+            createdAt: data.created_at 
+        };
         setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, comments: [newComment, ...(trk.comments || [])] } : trk));
     }
   };
 
   const getChartTracks = async (_period: 'week' | 'month'): Promise<Track[]> => {
-    const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
+    const { data } = await supabase.from('tracks').select(`
+        *, 
+        profiles:uploader_id(username, photo_url),
+        comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
+    `).order('plays', { ascending: false }).limit(20);
     return mapTracksData(data || [], []);
   };
 
   const getLikedTracks = async (userId: number): Promise<Track[]> => {
     const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
     if (!likes || likes.length === 0) return [];
-    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', likes.map(l => l.track_id));
+    const { data: trks } = await supabase.from('tracks').select(`
+        *, 
+        profiles:uploader_id(username, photo_url),
+        comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
+    `).in('id', likes.map(l => l.track_id));
     return mapTracksData(trks || [], likes.map(l => l.track_id));
   };
 
   const getUserHistory = async (userId: number): Promise<Track[]> => {
     const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', { ascending: false }).limit(20);
     if (!hist || hist.length === 0) return [];
-    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', [...new Set(hist.map(h => h.track_id))]);
+    const { data: trks } = await supabase.from('tracks').select(`
+        *, 
+        profiles:uploader_id(username, photo_url),
+        comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
+    `).in('id', [...new Set(hist.map(h => h.track_id))]);
     return mapTracksData(trks || [], []);
   };
 
