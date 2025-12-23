@@ -9,7 +9,7 @@ import Profile from './pages/Profile';
 import Rooms from './pages/Concerts';
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
-import { Home, BarChart2, UploadCloud, User, Video, Mic, Zap, X } from './components/ui/Icons';
+import { Home, BarChart2, UploadCloud, User, Video, Mic, Zap, X, Loader2 } from './components/ui/Icons';
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
   const { t } = useStore();
@@ -89,7 +89,7 @@ const MinimizedRoom: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks, activeRoom, isRoomMinimized } = useStore(); 
+  const { tracks, activeRoom, isRoomMinimized, isLoading } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -156,10 +156,22 @@ const MainLayout: React.FC = () => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 z-[999]">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin" />
+          <Zap size={24} className="absolute inset-0 m-auto text-sky-400 animate-pulse" fill="currentColor" />
+        </div>
+        <p className="text-sky-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Initializing Mori</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-sky-400/30">
-      <main className="max-w-md mx-auto min-h-screen relative shadow-2xl overflow-hidden bg-black">
-        <div className="h-full overflow-y-auto custom-scrollbar no-scrollbar">
+      <main className="max-w-md mx-auto min-h-screen relative shadow-2xl overflow-hidden bg-black flex flex-col">
+        <div className="flex-1 overflow-y-auto custom-scrollbar no-scrollbar">
             {renderContent()}
         </div>
         

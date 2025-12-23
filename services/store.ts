@@ -143,9 +143,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const fetchTracks = useCallback(async (userId?: number) => {
-    const { data: tracksData } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('created_at', { ascending: false });
-    const mapped = await mapTracksData(tracksData || [], userId);
-    setTracks(mapped);
+    try {
+      const { data: tracksData } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('created_at', { ascending: false });
+      const mapped = await mapTracksData(tracksData || [], userId);
+      setTracks(mapped);
+    } catch (e) {
+      console.error("Fetch tracks error:", e);
+    }
   }, [mapTracksData]);
 
   const fetchRooms = useCallback(async () => {
@@ -157,11 +161,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .order('created_at', { ascending: false });
 
       if (error) {
-        if (error.code === 'PGRST116' || error.message.includes('rooms')) {
-          setRooms([]);
-          return;
-        }
-        throw error;
+        setRooms([]);
+        return;
       }
 
       if (data) {
@@ -238,14 +239,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateRoomState = async (roomId: string, updates: Partial<Room>) => {
-      // Sync with Supabase so listeners get the updates
       const dbPayload: any = {};
       if (updates.isMicActive !== undefined) dbPayload.is_mic_active = updates.isMicActive;
       if (updates.currentTrack !== undefined) dbPayload.track_id = updates.currentTrack?.id;
       
       await supabase.from('rooms').update(dbPayload).eq('id', roomId);
       
-      // Update local state and broadcast
       if (activeRoom?.id === roomId) {
           const updated = { ...activeRoom, ...updates };
           setActiveRoom(updated);
@@ -489,32 +488,45 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     const init = async () => {
-        setIsLoading(true);
-        const tg = (window as any).Telegram?.WebApp;
-        if (tg?.initDataUnsafe?.user) {
-            const tgUser = tg.initDataUnsafe.user;
-            let user = await fetchUserById(tgUser.id);
+        try {
+            setIsLoading(true);
+            const tg = (window as any).Telegram?.WebApp;
             
-            if (!user) {
-                const { error } = await supabase.from('profiles').insert({
-                    id: tgUser.id,
-                    username: tgUser.username || `user_${tgUser.id}`,
-                    first_name: tgUser.first_name,
-                    last_name: tgUser.last_name,
-                    photo_url: tgUser.photo_url || ''
-                });
-                if (!error) user = await fetchUserById(tgUser.id);
+            // Wait a small bit for TG object to be fully injected on mobile
+            if (!tg?.initDataUnsafe?.user) {
+              await new Promise(r => setTimeout(r, 100));
             }
 
-            if (user) {
-              setCurrentUser(user);
-              await fetchUserPlaylists(user.id);
-              await fetchSavedPlaylists(user.id);
+            if (tg?.initDataUnsafe?.user) {
+                const tgUser = tg.initDataUnsafe.user;
+                let user = await fetchUserById(tgUser.id);
+                
+                if (!user) {
+                    const { error } = await supabase.from('profiles').insert({
+                        id: tgUser.id,
+                        username: tgUser.username || `user_${tgUser.id}`,
+                        first_name: tgUser.first_name,
+                        last_name: tgUser.last_name,
+                        photo_url: tgUser.photo_url || ''
+                    });
+                    if (!error) user = await fetchUserById(tgUser.id);
+                }
+
+                if (user) {
+                    setCurrentUser(user);
+                    await fetchUserPlaylists(user.id);
+                    await fetchSavedPlaylists(user.id);
+                }
             }
+            
+            await fetchTracks();
+            await fetchRooms();
+        } catch (err) {
+            console.error("Initialization error:", err);
+        } finally {
+            // CRITICAL: Always reset loading state to avoid black screen
+            setIsLoading(false);
         }
-        await fetchTracks();
-        await fetchRooms();
-        setIsLoading(false);
     };
     init();
   }, [fetchTracks, fetchRooms]);
