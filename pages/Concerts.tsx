@@ -1,28 +1,34 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Room, RoomMessage } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon } from '../components/ui/Icons';
+import { Room, RoomMessage, Track, Playlist } from '../types';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Headphones } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
-  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, tracks, t } = useStore();
-  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, tracks, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks } = useStore();
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [roomTab, setRoomTab] = useState<'chat' | 'console'>('chat');
   
+  // Create Modal State
   const [newRoomTitle, setNewRoomTitle] = useState('');
   const [newRoomCover, setNewRoomCover] = useState<File | null>(null);
   const [previewCover, setPreviewCover] = useState<string | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
 
+  // DJ Console State
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
+  const [consoleTracks, setConsoleTracks] = useState<Track[]>([]);
+  const [isMicOn, setIsMicOn] = useState(false);
+
   const chatRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  // Real-time Chat Subscription
+  // Real-time Sync & Chat
   useEffect(() => {
     if (!activeRoom) {
       setMessages([]);
@@ -35,18 +41,25 @@ const Rooms: React.FC = () => {
       .on('broadcast', { event: 'message' }, (payload) => {
         setMessages(prev => [...prev, payload.payload as RoomMessage]);
       })
+      .on('broadcast', { event: 'room_sync' }, (payload) => {
+        // Sync DJ state to listeners
+        const updates = payload.payload;
+        setActiveRoom({ ...activeRoom, ...updates });
+      })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeRoom]);
+  }, [activeRoom, setActiveRoom]);
 
-  // Simulation of room intensity
+  // DJ Audio Mixing simulation
   useEffect(() => {
     if (!activeRoom) return;
     const interval = setInterval(() => {
-        setAudioIntensity(0.3 + Math.random() * 0.7);
+        const base = activeRoom.currentTrack ? 0.4 : 0.1;
+        const micBoost = activeRoom.isMicActive ? 0.4 : 0;
+        setAudioIntensity(base + micBoost + Math.random() * 0.2);
     }, 150);
     return () => {
         clearInterval(interval);
@@ -60,10 +73,17 @@ const Rooms: React.FC = () => {
     }
   }, [messages]);
 
+  useEffect(() => {
+      if (selectedPlaylistId) {
+          fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
+      }
+  }, [selectedPlaylistId, fetchPlaylistTracks]);
+
   const handleOpenRoom = (room: Room) => {
       setActiveRoom(room);
+      setRoomMinimized(false);
       setMessages([
-          { id: '1', userId: 0, username: 'System', text: `Welcome to ${room.title}! Joined with ${room.listeners} others.`, type: 'system', createdAt: new Date().toISOString() }
+          { id: '1', userId: 0, username: 'System', text: `Welcome to ${room.title}! Session live.`, type: 'system', createdAt: new Date().toISOString() }
       ]);
   };
 
@@ -71,30 +91,26 @@ const Rooms: React.FC = () => {
       e.preventDefault();
       if (!newRoomTitle.trim()) return;
       setIsCreating(true);
-      
-      try {
-        await createRoom({
-            title: newRoomTitle,
-            coverFile: newRoomCover,
-            trackId: selectedTrackId || undefined
-        });
-        
-        setShowCreateModal(false);
-        setNewRoomTitle('');
-        setNewRoomCover(null);
-        setPreviewCover(null);
-      } finally {
-        setIsCreating(false);
+      await createRoom({ title: newRoomTitle, coverFile: newRoomCover, trackId: selectedTrackId || undefined });
+      setIsCreating(false);
+      setShowCreateModal(false);
+  };
+
+  const handleEndSession = async () => {
+      if (activeRoom && currentUser?.id === activeRoom.djId) {
+          const tg = (window as any).Telegram?.WebApp;
+          tg?.showConfirm("Are you sure you want to end the session?", async (confirmed: boolean) => {
+              if (confirmed) {
+                  await deleteRoom(activeRoom.id);
+                  setActiveRoom(null);
+                  setRoomMinimized(false);
+              }
+          });
       }
   };
 
-  const handleCloseRoom = async () => {
-      if (activeRoom && currentUser?.id === activeRoom.djId) {
-          await deleteRoom(activeRoom.id);
-          setActiveRoom(null);
-      } else {
-          setActiveRoom(null);
-      }
+  const handleMinimize = () => {
+      setRoomMinimized(true);
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -115,48 +131,42 @@ const Rooms: React.FC = () => {
       setInputText('');
   };
 
-  const myTracks = tracks.filter(t => t.uploaderId === currentUser?.id);
+  const toggleMic = () => {
+      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
+      const newState = !isMicOn;
+      setIsMicOn(newState);
+      updateRoomState(activeRoom.id, { isMicActive: newState });
+      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+  };
+
+  const playInRoom = (track: Track) => {
+      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
+      updateRoomState(activeRoom.id, { currentTrack: track });
+      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+  };
 
   if (!activeRoom) {
       return (
           <div className="p-5 pb-32 animate-in fade-in">
               <header className="flex justify-between items-start mb-8 mt-6">
                   <div>
-                    <h1 className="text-3xl font-black text-white uppercase italic tracking-tighter">
-                        {t('concerts_title')}
-                    </h1>
-                    <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest mt-1">Live synchronized listening</p>
+                    <h1 className="text-3xl font-black text-white uppercase italic tracking-tighter">{t('concerts_title')}</h1>
+                    <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest mt-1">Live synchronized radio</p>
                   </div>
-                  <button 
-                    onClick={() => setShowCreateModal(true)}
-                    className="p-3 bg-sky-500 text-black rounded-2xl shadow-lg shadow-sky-500/20 active:scale-95 transition-all"
-                  >
-                    <Plus size={24} />
-                  </button>
+                  <button onClick={() => setShowCreateModal(true)} className="p-3 bg-sky-500 text-black rounded-2xl shadow-lg shadow-sky-500/20 active:scale-95 transition-all"><Plus size={24} /></button>
               </header>
 
               <div className="space-y-6">
                   <h2 className="text-[10px] font-black text-sky-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]"/> 
-                      {t('concerts_live_now')}
+                      <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]"/> {t('concerts_live_now')}
                   </h2>
                   <div className="grid gap-5">
                       {rooms.map(room => (
-                          <div 
-                            key={room.id}
-                            onClick={() => handleOpenRoom(room)}
-                            className="group relative aspect-[16/9] rounded-[2.5rem] overflow-hidden cursor-pointer border border-white/5 bg-zinc-900 shadow-2xl transition-all active:scale-[0.98]"
-                          >
+                          <div key={room.id} onClick={() => handleOpenRoom(room)} className="group relative aspect-[16/9] rounded-[2.5rem] overflow-hidden cursor-pointer border border-white/5 bg-zinc-900 shadow-2xl transition-all active:scale-[0.98]">
                               <img src={room.coverUrl || room.djAvatar} className="w-full h-full object-cover opacity-50 transition-transform duration-700 group-hover:scale-105" alt=""/>
                               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-                              
-                              <div className="absolute top-5 left-5 bg-sky-500 text-black text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest shadow-xl">
-                                  LIVE
-                              </div>
-                              <div className="absolute top-5 right-5 bg-black/60 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-white/10">
-                                  <Users size={12} /> {room.listeners}
-                              </div>
-
+                              <div className="absolute top-5 left-5 bg-sky-500 text-black text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest shadow-xl">LIVE</div>
+                              <div className="absolute top-5 right-5 bg-black/60 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-white/10"><Users size={12} /> {room.listeners}</div>
                               <div className="absolute bottom-6 left-6 right-6">
                                   <h3 className="text-white font-black text-xl uppercase italic tracking-tighter leading-none">{room.title}</h3>
                                   <div className="flex items-center gap-2 mt-3 opacity-80">
@@ -169,72 +179,27 @@ const Rooms: React.FC = () => {
                       {rooms.length === 0 && (
                           <div className="text-center py-20 bg-zinc-900/40 rounded-[2.5rem] border border-dashed border-white/5">
                               <Music size={32} className="mx-auto text-zinc-700 mb-4" />
-                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-10">
-                                  No active sessions or database not set up.
-                              </p>
+                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-10">No active radio sessions.</p>
                           </div>
                       )}
                   </div>
               </div>
 
-              {/* Create Room Modal */}
               {showCreateModal && (
                   <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in">
                       <div className="bg-zinc-950 border border-white/10 rounded-[3rem] w-full max-w-md p-8 shadow-2xl relative">
                           <button onClick={() => setShowCreateModal(false)} className="absolute top-6 right-6 text-zinc-500 p-2"><X size={24}/></button>
-                          
                           <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-8">{t('concerts_create')}</h2>
-                          
                           <form onSubmit={handleCreateRoom} className="space-y-6">
-                              <div 
-                                onClick={() => coverInputRef.current?.click()}
-                                className="aspect-video rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/10 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all hover:border-sky-500/50"
-                              >
-                                  {previewCover ? (
-                                      <img src={previewCover} className="w-full h-full object-cover" alt=""/>
-                                  ) : (
-                                      <>
-                                        <ImageIcon size={32} className="text-zinc-700 mb-2" />
-                                        <span className="text-[10px] font-black uppercase text-zinc-500">{t('concerts_create_cover')}</span>
-                                      </>
-                                  )}
-                                  <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={e => {
-                                      if (e.target.files?.[0]) {
-                                          setNewRoomCover(e.target.files[0]);
-                                          setPreviewCover(URL.createObjectURL(e.target.files[0]));
-                                      }
-                                  }} />
+                              <div onClick={() => coverInputRef.current?.click()} className="aspect-video rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/10 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all hover:border-sky-500/50">
+                                  {previewCover ? <img src={previewCover} className="w-full h-full object-cover" alt=""/> : <><ImageIcon size={32} className="text-zinc-700 mb-2" /><span className="text-[10px] font-black uppercase text-zinc-500">{t('concerts_create_cover')}</span></>}
+                                  <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setNewRoomCover(e.target.files[0]); setPreviewCover(URL.createObjectURL(e.target.files[0])); } }} />
                               </div>
-
                               <div>
                                   <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">{t('concerts_create_title')}</label>
-                                  <input 
-                                    required 
-                                    type="text" 
-                                    value={newRoomTitle} 
-                                    onChange={e => setNewRoomTitle(e.target.value)} 
-                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500" 
-                                    placeholder="Enter title..."
-                                  />
+                                  <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500" placeholder="Radio Name..." />
                               </div>
-
-                              <div>
-                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">Track to Stream (Optional)</label>
-                                  <select 
-                                    value={selectedTrackId} 
-                                    onChange={e => setSelectedTrackId(e.target.value)} 
-                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500 appearance-none"
-                                  >
-                                      <option value="">None / Live Mic</option>
-                                      {myTracks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
-                                  </select>
-                              </div>
-
-                              <button 
-                                type="submit" 
-                                disabled={isCreating || !newRoomTitle}
-                                className="w-full bg-sky-500 text-black py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-sky-500/20 disabled:opacity-30 flex items-center justify-center gap-3"
-                              >
+                              <button type="submit" disabled={isCreating || !newRoomTitle} className="w-full bg-sky-500 text-black py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-sky-500/20 disabled:opacity-30 flex items-center justify-center gap-3">
                                   {isCreating ? <Loader2 className="animate-spin" size={20}/> : <><Zap size={20} fill="currentColor"/> {t('concerts_create_btn')}</>}
                               </button>
                           </form>
@@ -245,11 +210,13 @@ const Rooms: React.FC = () => {
       );
   }
 
+  // Active Room View
+  const isDJ = currentUser?.id === activeRoom.djId;
+
   return (
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
-          
           <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
-              <button onClick={handleCloseRoom} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10">
+              <button onClick={handleMinimize} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10">
                   <ArrowLeft size={24} />
               </button>
               <div className="flex items-center gap-3">
@@ -257,8 +224,8 @@ const Rooms: React.FC = () => {
                       <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
                       <span className="text-white text-[10px] font-black uppercase tracking-widest">Listeners: {activeRoom.listeners}</span>
                   </div>
-                  {currentUser?.id === activeRoom.djId && (
-                      <button onClick={handleCloseRoom} className="p-3 bg-red-500/20 rounded-full text-red-500 border border-red-500/20">
+                  {isDJ && (
+                      <button onClick={handleEndSession} className="p-3 bg-red-500/20 rounded-full text-red-500 border border-red-500/20">
                           <X size={24} />
                       </button>
                   )}
@@ -267,13 +234,8 @@ const Rooms: React.FC = () => {
 
           <div className="w-full h-[40vh] relative flex-shrink-0 overflow-hidden bg-zinc-950">
                <AuraEffect vibe="phonk" />
-               {activeRoom.streamUrl ? (
-                   <video src={activeRoom.streamUrl} className="w-full h-full object-cover opacity-60" autoPlay muted loop playsInline />
-               ) : (
-                   <img src={activeRoom.coverUrl || activeRoom.djAvatar} className="w-full h-full object-cover opacity-40 blur-sm" alt="" />
-               )}
+               <img src={activeRoom.coverUrl || activeRoom.djAvatar} className="w-full h-full object-cover opacity-40 blur-sm" alt="" />
                <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
-               
                <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between z-10">
                    <div>
                        <h2 className="text-white font-black text-2xl uppercase italic tracking-tighter leading-none mb-3">{activeRoom.title}</h2>
@@ -281,50 +243,93 @@ const Rooms: React.FC = () => {
                             <img src={activeRoom.djAvatar} className="w-10 h-10 rounded-full border-2 border-sky-400" alt=""/>
                             <div>
                                 <span className="text-white font-black text-sm uppercase italic block">{activeRoom.djName}</span>
-                                <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest">
-                                    {activeRoom.currentTrack ? `Streaming: ${activeRoom.currentTrack.title}` : 'LIVE MIC SESSION'}
+                                <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
+                                    {activeRoom.isMicActive && <Mic size={10} className="text-red-500 animate-pulse" />}
+                                    {activeRoom.currentTrack ? `ON AIR: ${activeRoom.currentTrack.title}` : 'LIVE DJ SET'}
                                 </span>
                             </div>
                        </div>
                    </div>
-                   <div className="w-12 h-12 rounded-full bg-sky-500 flex items-center justify-center text-black animate-pulse">
-                       <Zap size={24} fill="currentColor" />
+                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-black transition-all ${activeRoom.isMicActive ? 'bg-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'bg-sky-500'}`}>
+                       {activeRoom.isMicActive ? <Mic size={24} fill="currentColor" /> : <Zap size={24} fill="currentColor" />}
                    </div>
                </div>
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col relative bg-black">
-               <div className="flex-1 overflow-y-auto p-5 space-y-4 no-scrollbar" ref={chatRef}>
-                   {messages.map((msg) => (
-                       <div key={msg.id} className={`flex flex-col ${msg.type === 'system' ? 'items-center my-4' : 'items-start'}`}>
-                           {msg.type === 'system' ? (
-                               <div className="px-4 py-1.5 rounded-full bg-white/5 border border-white/5 text-zinc-500 text-[9px] font-black uppercase tracking-widest">
-                                   {msg.text}
-                               </div>
-                           ) : (
-                               <div className="bg-zinc-900/60 backdrop-blur-lg border border-white/5 rounded-[1.5rem] rounded-tl-none px-4 py-3 max-w-[85%]">
-                                   <span className="text-sky-400 text-[10px] font-black uppercase block mb-1 tracking-widest italic">{msg.username}</span>
-                                   <span className="text-zinc-200 text-sm font-medium leading-relaxed">{msg.text}</span>
-                               </div>
-                           )}
-                       </div>
-                   ))}
+               {/* View Tabs */}
+               <div className="flex border-b border-white/5 bg-zinc-950 px-5">
+                   <button onClick={() => setRoomTab('chat')} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] relative ${roomTab === 'chat' ? 'text-sky-400' : 'text-zinc-600'}`}>
+                       Radio Chat
+                       {roomTab === 'chat' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
+                   </button>
+                   {isDJ && (
+                       <button onClick={() => setRoomTab('console')} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] relative ${roomTab === 'console' ? 'text-sky-400' : 'text-zinc-600'}`}>
+                           DJ Console
+                           {roomTab === 'console' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
+                       </button>
+                   )}
                </div>
 
-               <div className="p-4 bg-zinc-950 border-t border-white/5 flex gap-3 items-center pb-safe">
-                   <form onSubmit={handleSendMessage} className="flex-1 relative">
-                       <input 
-                         type="text" 
-                         value={inputText}
-                         onChange={(e) => setInputText(e.target.value)}
-                         placeholder={t('concerts_chat_placeholder')}
-                         className="w-full bg-zinc-900 border border-white/10 rounded-2xl py-4 pl-5 pr-14 text-white text-sm font-bold focus:ring-1 focus:ring-sky-500 outline-none"
-                       />
-                       <button type="submit" disabled={!inputText.trim()} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-sky-400 hover:text-white disabled:opacity-20 transition-all">
-                           <Send size={20} />
-                       </button>
-                   </form>
-               </div>
+               {roomTab === 'chat' ? (
+                   <div className="flex-1 flex flex-col overflow-hidden">
+                       <div className="flex-1 overflow-y-auto p-5 space-y-4 no-scrollbar" ref={chatRef}>
+                           {messages.map((msg) => (
+                               <div key={msg.id} className={`flex flex-col ${msg.type === 'system' ? 'items-center my-4' : 'items-start'}`}>
+                                   {msg.type === 'system' ? <div className="px-4 py-1.5 rounded-full bg-white/5 border border-white/5 text-zinc-500 text-[9px] font-black uppercase tracking-widest">{msg.text}</div> : (
+                                       <div className="bg-zinc-900/60 backdrop-blur-lg border border-white/5 rounded-[1.5rem] rounded-tl-none px-4 py-3 max-w-[85%] shadow-xl">
+                                           <span className="text-sky-400 text-[10px] font-black uppercase block mb-1 tracking-widest italic">{msg.username}</span>
+                                           <span className="text-zinc-200 text-sm font-medium leading-relaxed">{msg.text}</span>
+                                       </div>
+                                   )}
+                               </div>
+                           ))}
+                       </div>
+                       <div className="p-4 bg-zinc-950 border-t border-white/5 flex gap-3 items-center pb-safe">
+                           <form onSubmit={handleSendMessage} className="flex-1 relative">
+                               <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder={t('concerts_chat_placeholder')} className="w-full bg-zinc-900 border border-white/10 rounded-2xl py-4 pl-5 pr-14 text-white text-sm font-bold focus:ring-1 focus:ring-sky-500 outline-none" />
+                               <button type="submit" disabled={!inputText.trim()} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-sky-400 hover:text-white disabled:opacity-20 transition-all"><Send size={20} /></button>
+                           </form>
+                       </div>
+                   </div>
+               ) : (
+                   <div className="flex-1 flex flex-col overflow-y-auto p-6 space-y-8 bg-zinc-950 no-scrollbar pb-32">
+                        {/* Mic Control */}
+                        <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-white font-black uppercase italic tracking-tighter text-xl">On Air Mic</h3>
+                                <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest mt-1">Broadcast your voice live</p>
+                            </div>
+                            <button onClick={toggleMic} className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all ${isMicOn ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-zinc-800 text-zinc-500'}`}>
+                                <Mic size={32} />
+                            </button>
+                        </div>
+
+                        {/* Music Library Selector */}
+                        <div className="space-y-4">
+                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
+                            <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
+                                <option value="">Select Playlist...</option>
+                                {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                            </select>
+
+                            <div className="space-y-3">
+                                {consoleTracks.map(track => (
+                                    <div key={track.id} onClick={() => playInRoom(track)} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all cursor-pointer ${activeRoom.currentTrack?.id === track.id ? 'bg-sky-500/10 border-sky-500/30' : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-900'}`}>
+                                        <img src={track.coverUrl} className="w-12 h-12 rounded-xl object-cover" alt=""/>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="text-white text-sm font-black uppercase truncate italic">{track.title}</h4>
+                                            <p className="text-zinc-500 text-[10px] font-bold uppercase truncate">{track.uploaderName}</p>
+                                        </div>
+                                        <div className={`p-2 rounded-lg ${activeRoom.currentTrack?.id === track.id ? 'bg-sky-500 text-black' : 'bg-zinc-800 text-zinc-600'}`}>
+                                            <Play size={16} fill="currentColor" />
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                   </div>
+               )}
           </div>
       </div>
   );

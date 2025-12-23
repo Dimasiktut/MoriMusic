@@ -28,6 +28,10 @@ interface StoreContextType {
   myPlaylists: Playlist[]; 
   savedPlaylists: Playlist[];
   rooms: Room[];
+  activeRoom: Room | null;
+  isRoomMinimized: boolean;
+  setActiveRoom: (room: Room | null) => void;
+  setRoomMinimized: (v: boolean) => void;
   isLoading: boolean;
   audioIntensity: number;
   setAudioIntensity: (v: number) => void;
@@ -58,6 +62,7 @@ interface StoreContextType {
   deleteRoom: (roomId: string) => Promise<void>;
   fetchRooms: () => Promise<void>;
   sendRoomMessage: (roomId: string, message: Partial<RoomMessage>) => Promise<void>;
+  updateRoomState: (roomId: string, updates: Partial<Room>) => Promise<void>;
   donateToRoom: () => Promise<boolean>;
 }
 
@@ -75,6 +80,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
   const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const [isRoomMinimized, setRoomMinimized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [audioIntensity, setAudioIntensity] = useState(0);
   
@@ -150,9 +157,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .order('created_at', { ascending: false });
 
       if (error) {
-        // PGRST116 means relation does not exist
         if (error.code === 'PGRST116' || error.message.includes('rooms')) {
-          console.warn("Rooms table missing. Please run the SQL migration.");
           setRooms([]);
           return;
         }
@@ -170,12 +175,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           startTime: r.created_at,
           status: r.status,
           listeners: Math.floor(Math.random() * 50) + 1, 
-          currentTrack: undefined
+          currentTrack: undefined,
+          isMicActive: r.is_mic_active || false
         }));
         setRooms(mapped);
       }
     } catch (e) {
-      console.error("Error fetching rooms:", e);
       setRooms([]);
     }
   }, []);
@@ -205,17 +210,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           payload.track_id = data.trackId;
       }
       
-      const { error } = await supabase.from('rooms').insert(payload);
+      const { data: inserted, error } = await supabase.from('rooms').insert(payload).select('*, profiles:dj_id(username, photo_url)').single();
 
       if (error) {
-          console.error("Room creation error:", error);
-          if (error.message.includes('rooms')) {
-              tg?.showAlert("Table 'rooms' is missing in database. Please contact admin.");
-          } else {
-              tg?.showAlert(`Error: ${error.message}`);
-          }
-      } else {
+          tg?.showAlert(`Error: ${error.message}`);
+      } else if (inserted) {
           await fetchRooms();
+          const newRoom: Room = {
+              id: inserted.id,
+              title: inserted.title,
+              djId: inserted.dj_id,
+              djName: inserted.profiles?.username || 'DJ',
+              djAvatar: inserted.profiles?.photo_url || '',
+              coverUrl: inserted.cover_url,
+              startTime: inserted.created_at,
+              status: inserted.status,
+              listeners: 1,
+              isMicActive: false
+          };
+          setActiveRoom(newRoom);
       }
     } catch (e: any) {
         tg?.showAlert(`Failed to create room: ${e.message}`);
@@ -224,8 +237,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const updateRoomState = async (roomId: string, updates: Partial<Room>) => {
+      // Sync with Supabase so listeners get the updates
+      const dbPayload: any = {};
+      if (updates.isMicActive !== undefined) dbPayload.is_mic_active = updates.isMicActive;
+      if (updates.currentTrack !== undefined) dbPayload.track_id = updates.currentTrack?.id;
+      
+      await supabase.from('rooms').update(dbPayload).eq('id', roomId);
+      
+      // Update local state and broadcast
+      if (activeRoom?.id === roomId) {
+          const updated = { ...activeRoom, ...updates };
+          setActiveRoom(updated);
+          
+          const channel = supabase.channel(`room:${roomId}`);
+          await channel.subscribe(async (status) => {
+              if (status === 'SUBSCRIBED') {
+                  await channel.send({
+                      type: 'broadcast',
+                      event: 'room_sync',
+                      payload: updates,
+                  });
+              }
+          });
+      }
+  };
+
   const deleteRoom = async (roomId: string) => {
     await supabase.from('rooms').delete().eq('id', roomId);
+    if (activeRoom?.id === roomId) setActiveRoom(null);
     await fetchRooms();
   };
 
@@ -455,7 +495,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const tgUser = tg.initDataUnsafe.user;
             let user = await fetchUserById(tgUser.id);
             
-            // Auto-register user if profile doesn't exist
             if (!user) {
                 const { error } = await supabase.from('profiles').insert({
                     id: tgUser.id,
@@ -482,13 +521,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   return React.createElement(StoreContext.Provider, {
     value: {
-      currentUser, tracks, myPlaylists, savedPlaylists, rooms, isLoading, audioIntensity, setAudioIntensity, language, setLanguage, t,
+      currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, setActiveRoom, setRoomMinimized, isLoading, audioIntensity, setAudioIntensity, language, setLanguage, t,
       uploadTrack, uploadAlbum, generateTrackDescription,
       createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists, toggleSavePlaylist, fetchPlaylistTracks,
       deleteTrack, downloadTrack, toggleLike, addComment,
       recordListen, updateProfile, uploadImage, fetchUserById,
       getChartTracks, getLikedTracks, getUserHistory,
-      createRoom, deleteRoom, fetchRooms, sendRoomMessage, donateToRoom: async () => true
+      createRoom, deleteRoom, fetchRooms, sendRoomMessage, updateRoomState, donateToRoom: async () => true
     }
   }, children);
 };

@@ -9,7 +9,7 @@ import Profile from './pages/Profile';
 import Rooms from './pages/Concerts';
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
-import { Home, BarChart2, UploadCloud, User, Video } from './components/ui/Icons';
+import { Home, BarChart2, UploadCloud, User, Video, Mic, Zap, X } from './components/ui/Icons';
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
   const { t } = useStore();
@@ -46,8 +46,50 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
   );
 };
 
+const MinimizedRoom: React.FC = () => {
+    const { activeRoom, setRoomMinimized, deleteRoom, currentUser } = useStore();
+    if (!activeRoom) return null;
+
+    const isDJ = currentUser?.id === activeRoom.djId;
+
+    return (
+        <div 
+          onClick={() => setRoomMinimized(false)}
+          className="fixed bottom-[110px] left-4 right-4 z-[55] glass border border-sky-500/30 rounded-[2rem] p-3 flex items-center justify-between shadow-2xl animate-in slide-in-from-bottom-5 duration-300"
+        >
+            <div className="flex items-center gap-3 overflow-hidden">
+                <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex-shrink-0 overflow-hidden relative">
+                    <img src={activeRoom.coverUrl || activeRoom.djAvatar} className="w-full h-full object-cover" alt=""/>
+                    <div className="absolute top-1 right-1 w-2 h-2 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                </div>
+                <div className="flex flex-col min-w-0">
+                    <span className="text-white text-[11px] font-black uppercase italic truncate">{activeRoom.title}</span>
+                    <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 truncate">
+                        {activeRoom.isMicActive && <Mic size={10} className="text-red-500 animate-pulse"/>}
+                        {activeRoom.currentTrack ? `Streaming: ${activeRoom.currentTrack.title}` : 'Live DJ Set'}
+                    </span>
+                </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center text-sky-400">
+                    <Zap size={16} fill="currentColor" />
+                </div>
+                {isDJ && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); deleteRoom(activeRoom.id); }}
+                      className="p-2 text-zinc-600 hover:text-red-500 transition-colors"
+                    >
+                        <X size={20} />
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+};
+
 const MainLayout: React.FC = () => {
-  const { tracks } = useStore(); 
+  const { tracks, activeRoom, isRoomMinimized } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -67,6 +109,13 @@ const MainLayout: React.FC = () => {
         deepLinkProcessed.current = true;
     }
   }, [tracks]);
+
+  // Sync AudioPlayer with Active Room if user is a listener
+  useEffect(() => {
+      if (activeRoom?.currentTrack) {
+          setCurrentTrack(activeRoom.currentTrack);
+      }
+  }, [activeRoom?.currentTrack]);
 
   const handlePlayTrack = (track: Track) => setCurrentTrack(track);
 
@@ -113,7 +162,16 @@ const MainLayout: React.FC = () => {
         <div className="h-full overflow-y-auto custom-scrollbar no-scrollbar">
             {renderContent()}
         </div>
-        <AudioPlayer track={currentTrack} onClose={() => setCurrentTrack(null)} onOpenProfile={handleOpenProfile} onNext={handleNextTrack} onPrev={handlePrevTrack} />
+        
+        {/* Minimized Room PIP */}
+        {activeRoom && isRoomMinimized && <MinimizedRoom />}
+        
+        {/* Full Room Overlay (if not minimized) */}
+        {activeRoom && !isRoomMinimized && <Rooms />}
+
+        {/* Regular Audio Player */}
+        {!activeRoom && <AudioPlayer track={currentTrack} onClose={() => setCurrentTrack(null)} onOpenProfile={handleOpenProfile} onNext={handleNextTrack} onPrev={handlePrevTrack} />}
+        
         {overlayView === 'none' && <Navigation activeTab={activeTab} onTabChange={handleTabChange} />}
       </main>
     </div>

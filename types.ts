@@ -81,6 +81,7 @@ export interface Room {
   listeners: number;
   streamUrl?: string;
   currentTrack?: Track;
+  isMicActive?: boolean;
 }
 
 export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings' | 'rooms';
