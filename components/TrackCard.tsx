@@ -24,6 +24,21 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // Helper for drawing rounded rects (manual path for better compatibility)
+  const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  };
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
@@ -46,35 +61,45 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
   };
 
   const handleShareSnippet = async () => {
     if (!snippetBlob) return;
     
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
-    const shareText = `${t('track_listen_text')} "${track.title}" ${t('track_by')} ${track.uploaderName} on MoriMusic!\n\nListen here: ${deepLink}`;
+    const shareText = `${t('track_listen_text')} "${track.title}" ${t('track_by')} ${track.uploaderName} on MoriMusic!\n\nLink: ${deepLink}`;
     
-    const file = new File([snippetBlob], "mori_music.png", { type: "image/png" });
-    const shareData = {
-      files: [file],
+    // File object for sharing
+    const file = new File([snippetBlob], `mori_${track.id}.png`, { type: "image/png" });
+    
+    const shareData: any = {
       title: 'MoriMusic',
       text: shareText,
     };
 
-    // Try native share if available (Mobile Telegram/Browsers)
-    if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+    const tg = (window as any).Telegram?.WebApp;
+
+    // Check if we can share files (Web Share API Level 2)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
-        await navigator.share(shareData);
+        await navigator.share({
+          ...shareData,
+          files: [file]
+        });
         return;
-      } catch (err) {
-        console.log("Native share failed, falling back to link", err);
+      } catch (err: any) {
+        console.error("Native share failed", err);
+        // If user cancelled, don't show error
+        if (err.name === 'AbortError') return;
       }
     }
 
-    // Fallback to Telegram share URL
+    // Fallback if file sharing is not supported or failed
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
-    if ((window as any).Telegram?.WebApp) {
-      (window as any).Telegram.WebApp.openTelegramLink(shareUrl);
+    if (tg) {
+      tg.openTelegramLink(shareUrl);
+      tg.HapticFeedback.impactOccurred('medium');
     } else {
       window.open(shareUrl, '_blank');
     }
@@ -98,7 +123,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
           const img = new Image();
           img.crossOrigin = "anonymous";
           img.onload = () => resolve(img);
-          img.onerror = reject;
+          img.onerror = () => reject(new Error(`Failed to load image: ${url}`));
           img.src = url;
         });
       };
@@ -106,98 +131,77 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
       try {
         const coverImg = await loadImage(track.coverUrl);
         
-        // 1. Layered Background (Deep Blur)
+        // 1. Background
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, 1080, 1080);
         
-        ctx.filter = 'blur(80px) brightness(0.4)';
+        ctx.filter = 'blur(70px) brightness(0.4)';
         ctx.drawImage(coverImg, -200, -200, 1480, 1480);
         ctx.filter = 'none';
 
-        // 2. Artistic Gradient Overlay
-        const gradient = ctx.createRadialGradient(540, 540, 0, 540, 540, 800);
+        // 2. Gradient Overlay
+        const gradient = ctx.createRadialGradient(540, 540, 0, 540, 540, 900);
         gradient.addColorStop(0, 'rgba(0,0,0,0)');
-        gradient.addColorStop(0.7, 'rgba(0,0,0,0.5)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0.95)');
+        gradient.addColorStop(0.8, 'rgba(0,0,0,0.6)');
+        gradient.addColorStop(1, 'rgba(0,0,0,1)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 1080, 1080);
 
-        // 3. Central Cover with Glassmorphism shadow
-        const coverSize = 620;
+        // 3. Cover
+        const coverSize = 600;
         const x = (1080 - coverSize) / 2;
-        const y = 140;
-        const radius = 100;
+        const y = 160;
+        const radius = 80;
 
-        // Shadow/Glow
-        ctx.shadowColor = 'rgba(56, 189, 248, 0.6)';
-        ctx.shadowBlur = 80;
-        ctx.beginPath();
-        ctx.roundRect(x - 5, y - 5, coverSize + 10, coverSize + 10, radius);
-        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        // Glow
+        ctx.shadowColor = 'rgba(56, 189, 248, 0.5)';
+        ctx.shadowBlur = 60;
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
+        drawRoundedRect(ctx, x - 10, y - 10, coverSize + 20, coverSize + 20, radius + 5);
         ctx.fill();
         ctx.shadowBlur = 0;
 
         ctx.save();
-        ctx.beginPath();
-        if (typeof ctx.roundRect === 'function') {
-           ctx.roundRect(x, y, coverSize, coverSize, radius);
-        } else {
-           ctx.rect(x, y, coverSize, coverSize);
-        }
+        drawRoundedRect(ctx, x, y, coverSize, coverSize, radius);
         ctx.clip();
         ctx.drawImage(coverImg, x, y, coverSize, coverSize);
         ctx.restore();
 
-        // White border
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-        ctx.lineWidth = 4;
-        ctx.stroke();
-
-        // 4. Equalizer Effect (Stylized bars)
-        const barWidth = 14;
-        const barGap = 10;
-        const barCount = 40;
+        // 4. Stylized Equalizer
+        const barWidth = 12;
+        const barGap = 8;
+        const barCount = 30;
         const startX = (1080 - (barCount * (barWidth + barGap))) / 2;
-        const baseY = 800;
+        const baseY = 820;
 
         ctx.fillStyle = '#38bdf8';
         ctx.shadowColor = '#38bdf8';
-        ctx.shadowBlur = 15;
+        ctx.shadowBlur = 10;
         
         for (let i = 0; i < barCount; i++) {
-          const barHeight = 20 + Math.random() * 80;
-          ctx.beginPath();
-          // Draw rounded bars
-          ctx.roundRect(
-            startX + i * (barWidth + barGap), 
-            baseY - barHeight / 2, 
-            barWidth, 
-            barHeight, 
-            barWidth / 2
-          );
+          const h = 30 + Math.random() * 90;
+          drawRoundedRect(ctx, startX + i * (barWidth + barGap), baseY - h / 2, barWidth, h, barWidth / 2);
           ctx.fill();
         }
         ctx.shadowBlur = 0;
 
-        // 5. Text Information
+        // 5. Typography
         ctx.fillStyle = 'white';
         ctx.textAlign = 'center';
         
         // Title
-        ctx.font = 'italic 900 80px system-ui';
-        ctx.letterSpacing = '-2px';
-        ctx.fillText(track.title.toUpperCase(), 540, 920);
+        ctx.font = 'italic 900 84px system-ui';
+        ctx.fillText(track.title.toUpperCase(), 540, 930);
 
         // Artist
         ctx.fillStyle = '#94a3b8';
-        ctx.font = 'bold 40px system-ui';
-        ctx.letterSpacing = '1px';
-        ctx.fillText(track.uploaderName.toUpperCase(), 540, 980);
+        ctx.font = 'bold 36px system-ui';
+        ctx.fillText(track.uploaderName.toUpperCase(), 540, 985);
 
         // Branding
         ctx.fillStyle = '#38bdf8';
-        ctx.font = '900 28px system-ui';
-        ctx.letterSpacing = '14px';
+        ctx.font = '900 24px system-ui';
+        ctx.letterSpacing = '16px';
         ctx.fillText('MORIMUSIC', 540, 1050);
 
         canvas.toBlob((blob) => {
@@ -206,9 +210,14 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
             setSnippetUrl(URL.createObjectURL(blob));
             if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
           }
-        }, 'image/png', 0.95);
-      } catch (err) { console.error("Canvas error", err); }
-    } finally { setIsGeneratingSnippet(false); }
+        }, 'image/png');
+      } catch (err: any) {
+          console.error("Canvas generation error", err);
+          if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.showAlert(`Error: ${err.message}`);
+      }
+    } finally {
+        setIsGeneratingSnippet(false);
+    }
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -221,22 +230,24 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   return (
     <div className="bg-zinc-900 border border-white/5 rounded-[2rem] p-4 mb-4 shadow-xl hover:border-white/10 transition-all group relative">
       
-      {/* Snippet Modal */}
+      {/* Snippet Overlay */}
       {snippetUrl && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-[0_0_80px_rgba(56,189,248,0.25)] border border-white/10">
+           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-2xl border border-white/10">
               <img src={snippetUrl} className="w-full h-full object-cover" alt="Snippet" />
            </div>
            
            <div className="mt-8 text-center">
              <h3 className="text-white font-black text-2xl uppercase italic tracking-tighter">{t('track_share')}</h3>
-             <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60">Visual snippet with blur & equalizer</p>
+             <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60 leading-relaxed max-w-[240px]">
+               Visual card for your stories and friends
+             </p>
            </div>
 
            <div className="grid grid-cols-2 gap-4 mt-10 w-full max-w-sm">
               <button 
                 onClick={handleDownloadSnippet} 
-                className="py-4 bg-zinc-800 rounded-2xl text-white font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
               >
                 <Download size={16} /> Save
               </button>
@@ -244,7 +255,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleShareSnippet}
                 className="py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> Share
+                <Send size={16} /> Send
               </button>
            </div>
            <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">Close Preview</button>
