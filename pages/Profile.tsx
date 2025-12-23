@@ -19,7 +19,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t, language } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
@@ -51,6 +51,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
             return;
         }
 
+        // Avoid re-fetching if already loaded
         if (profileUser?.id === targetUserId) return;
 
         if (isMounted) setLoadingProfile(true);
@@ -184,7 +185,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     <div className="pb-32 animate-in slide-in-from-bottom-4 duration-500 relative">
        {showCreatePlaylist && (
            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-               <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-w-sm p-8 space-y-6 shadow-2xl">
+               <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-sm p-8 space-y-6 shadow-2xl">
                    <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">{t('profile_create_playlist')}</h3>
                    <input type="text" autoFocus value={newPlaylistTitle} onChange={e => setNewPlaylistTitle(e.target.value)} placeholder={t('profile_playlist_name')} className="w-full bg-black border border-white/5 rounded-2xl p-4 text-white font-bold text-sm focus:ring-2 focus:ring-sky-500/50 outline-none transition-all" />
                    <div className="flex gap-4">

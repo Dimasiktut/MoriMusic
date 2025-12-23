@@ -218,7 +218,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
       try {
-          const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || '' });
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
           const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
           
           const response = await ai.models.generateContent({
@@ -249,7 +249,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const mapped = (data as any[] || []).map((item) => ({
               id: item.id, userId: item.user_id, title: item.title, coverUrl: item.cover_url, createdAt: item.created_at, trackCount: 0 
           }));
-          // Use ref or handle state carefully to avoid loops
           if (userId === currentUser?.id) setMyPlaylists(mapped);
           return mapped;
       } catch (e) { return []; }
@@ -466,16 +465,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const recordListen = useCallback(async (trackId: string) => { 
       if (!currentUser) return;
-      // Optimistic update
+      
+      // Optimistic update for UI smoothness
       setTracks(prev => prev.map(t => t.id === trackId ? { ...t, plays: (t.plays || 0) + 1 } : t));
+
       try {
+          // Record to history
           await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
-          // Atomic increment in DB
-          await supabase.rpc('increment_track_plays', { row_id: trackId });
-      } catch (err) {
-          // Fallback if RPC fails
+          
+          // Use fetch-then-update to ensure data isn't reset
           const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-          if (trackData) await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
+          if (trackData) {
+              await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
+          }
+      } catch (err) {
+          console.error("Failed to record listen:", err);
       }
   }, [currentUser?.id]);
 
@@ -502,7 +506,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
       if(!data) return [];
-      const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', data.map(i => i.track_id));
+      const ids = data.map(i => i.track_id);
+      if (ids.length === 0) return [];
+      const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
       return mapTracksData(tracks || [], currentUser?.id);
   }, [currentUser?.id, mapTracksData]);
 
@@ -510,6 +516,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { data } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', {ascending:false}).limit(20);
       if(!data) return [];
       const ids = [...new Set(data.map(i => i.track_id))];
+      if (ids.length === 0) return [];
       const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
       return mapTracksData(tracks || [], currentUser?.id);
   }, [currentUser?.id, mapTracksData]);
