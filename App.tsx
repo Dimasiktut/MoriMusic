@@ -56,8 +56,8 @@ const MainLayout: React.FC = () => {
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
-        // @ts-ignore
-        const tgParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        // Fix: Use type casting to any to access window.Telegram safely
+        const tgParam = (window as any).Telegram?.WebApp?.initDataUnsafe?.start_param;
         const startParam = tgParam || new URLSearchParams(window.location.search).get('startapp');
 
         if (startParam && startParam.startsWith('track_')) {

@@ -63,10 +63,9 @@ const Concerts: React.FC<ConcertsProps> = () => {
           }]);
           
           // Trigger visual feedback (simple alert for now, could be confetti)
-          // @ts-ignore
-          if (window.Telegram?.WebApp) {
-             // @ts-ignore
-             window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+          // Fix: Access Telegram WebApp safely using type casting to any
+          if ((window as any).Telegram?.WebApp) {
+             (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
           }
       }
   };

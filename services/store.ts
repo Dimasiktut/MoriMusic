@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Track, User, Comment, Playlist, Concert } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -225,7 +226,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Use Gemini API to generate track descriptions based on title and genre.
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
       try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+          // Fix: Use process.env.API_KEY directly as per guidelines
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
           const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
           
           const response = await ai.models.generateContent({
@@ -491,8 +493,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const { data: sessionData } = await supabase.auth.getSession();
             if (!sessionData.session) await supabase.auth.signInAnonymously().catch(() => {});
             
-            // @ts-ignore
-            const tg = window.Telegram?.WebApp;
+            // Fix: Use type casting to any to access window.Telegram
+            const tg = (window as any).Telegram?.WebApp;
             if (tg?.initDataUnsafe?.user) {
                 const tgUserId = tg.initDataUnsafe.user.id;
                 const user = await fetchUserById(tgUserId);
