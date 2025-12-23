@@ -89,12 +89,21 @@ const MinimizedRoom: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks, activeRoom, isRoomMinimized, isLoading } = useStore(); 
+  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
   const [viewingUserId, setViewingUserId] = useState<number | null>(null);
+  const [forceLoad, setForceLoad] = useState(false);
   const deepLinkProcessed = useRef(false);
+
+  // Safety timer to prevent infinite loading screens
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setForceLoad(true);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, []);
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
@@ -110,7 +119,6 @@ const MainLayout: React.FC = () => {
     }
   }, [tracks]);
 
-  // Sync AudioPlayer with Active Room if user is a listener
   useEffect(() => {
       if (activeRoom?.currentTrack) {
           setCurrentTrack(activeRoom.currentTrack);
@@ -156,6 +164,8 @@ const MainLayout: React.FC = () => {
     }
   };
 
+  const isLoading = storeLoading && !forceLoad;
+
   if (isLoading) {
     return (
       <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 z-[999]">
@@ -175,15 +185,9 @@ const MainLayout: React.FC = () => {
             {renderContent()}
         </div>
         
-        {/* Minimized Room PIP */}
         {activeRoom && isRoomMinimized && <MinimizedRoom />}
-        
-        {/* Full Room Overlay (if not minimized) */}
         {activeRoom && !isRoomMinimized && <Rooms />}
-
-        {/* Regular Audio Player */}
         {!activeRoom && <AudioPlayer track={currentTrack} onClose={() => setCurrentTrack(null)} onOpenProfile={handleOpenProfile} onNext={handleNextTrack} onPrev={handlePrevTrack} />}
-        
         {overlayView === 'none' && <Navigation activeTab={activeTab} onTabChange={handleTabChange} />}
       </main>
     </div>

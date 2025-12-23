@@ -105,46 +105,44 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Write a short, cool, and atmospheric description for a music track titled "${title}" in the ${genre} genre. Keep it under 150 characters. Use emojis.`,
-        config: {
-          temperature: 0.8,
-        }
+        config: { temperature: 0.8 }
       });
       return response.text || '';
     } catch (error) {
-      console.error("AI generation failed", error);
       return '';
     }
   };
 
+  // Optimized Mapping: Avoid separate DB calls for each track item
   const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
+      
       let userLikes: string[] = [];
       if (currentUserId) {
-        const { data: likesData } = await supabase.from('track_likes').select('track_id').eq('user_id', currentUserId);
-        if (likesData) userLikes = likesData.map(l => l.track_id);
+        try {
+          const { data: likesData } = await supabase.from('track_likes').select('track_id').eq('user_id', currentUserId);
+          if (likesData) userLikes = likesData.map(l => l.track_id);
+        } catch (e) {}
       }
-      return Promise.all(rawTracks.map(async (trk: any) => {
-         let comments: Comment[] = [];
-         let likesCount = 0;
-         try {
-             const { data: commentsData } = await supabase.from('comments').select('*').eq('track_id', trk.id).order('created_at', { ascending: false }).limit(3);
-             if (commentsData) comments = commentsData;
-             const { count } = await supabase.from('track_likes').select('*', { count: 'exact', head: true }).eq('track_id', trk.id);
-             if (count !== null) likesCount = count;
-         } catch (e) {}
-         return {
+
+      return rawTracks.map((trk: any) => ({
           id: trk.id, uploaderId: trk.uploader_id, uploaderName: trk.profiles?.username || 'Unknown',
           uploaderAvatar: trk.profiles?.photo_url, title: trk.title, description: trk.description,
           genre: trk.genre, coverUrl: trk.cover_url, audioUrl: trk.audio_url, duration: trk.duration,
-          createdAt: trk.created_at, plays: trk.plays || 0, likes: likesCount, comments,
+          createdAt: trk.created_at, plays: trk.plays || 0, likes: trk.likes_count || 0, 
+          comments: [], // Comments will be loaded lazily if needed
           isLikedByCurrentUser: userLikes.includes(trk.id), isVerifiedUploader: (trk.plays || 0) > 1000 
-        };
       }));
   }, []);
 
   const fetchTracks = useCallback(async (userId?: number) => {
     try {
-      const { data: tracksData } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('created_at', { ascending: false });
+      const { data: tracksData, error } = await supabase
+        .from('tracks')
+        .select('*, profiles:uploader_id(username, photo_url)')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
       const mapped = await mapTracksData(tracksData || [], userId);
       setTracks(mapped);
     } catch (e) {
@@ -160,79 +158,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .eq('status', 'live')
         .order('created_at', { ascending: false });
 
-      if (error) {
-        setRooms([]);
-        return;
-      }
-
-      if (data) {
+      if (data && !error) {
         const mapped: Room[] = data.map((r: any) => ({
-          id: r.id,
-          title: r.title,
-          djId: r.dj_id,
+          id: r.id, title: r.title, djId: r.dj_id,
           djName: r.profiles?.username || 'DJ',
           djAvatar: r.profiles?.photo_url || '',
-          coverUrl: r.cover_url,
-          startTime: r.created_at,
-          status: r.status,
-          listeners: Math.floor(Math.random() * 50) + 1, 
-          currentTrack: undefined,
+          coverUrl: r.cover_url, startTime: r.created_at,
+          status: r.status, listeners: Math.floor(Math.random() * 50) + 1, 
           isMicActive: r.is_mic_active || false
         }));
         setRooms(mapped);
       }
-    } catch (e) {
-      setRooms([]);
-    }
+    } catch (e) {}
   }, []);
 
   const createRoom = async (data: CreateRoomData) => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (!currentUser) {
-        tg?.showAlert("You must be logged in to create a room.");
-        return;
-    }
-    
+    if (!currentUser) return;
     setIsLoading(true);
     try {
       let coverUrl = '';
       if (data.coverFile) {
         coverUrl = await uploadImage(data.coverFile, 'music', `room_covers/${currentUser.id}/${Date.now()}`);
       }
-      
-      const payload: any = {
-        title: data.title,
-        dj_id: currentUser.id,
-        cover_url: coverUrl,
-        status: 'live'
-      };
+      const { data: inserted, error } = await supabase.from('rooms').insert({
+        title: data.title, dj_id: currentUser.id, cover_url: coverUrl, status: 'live', track_id: data.trackId
+      }).select('*, profiles:dj_id(username, photo_url)').single();
 
-      if (data.trackId && data.trackId !== "") {
-          payload.track_id = data.trackId;
-      }
-      
-      const { data: inserted, error } = await supabase.from('rooms').insert(payload).select('*, profiles:dj_id(username, photo_url)').single();
-
-      if (error) {
-          tg?.showAlert(`Error: ${error.message}`);
-      } else if (inserted) {
+      if (!error && inserted) {
           await fetchRooms();
-          const newRoom: Room = {
-              id: inserted.id,
-              title: inserted.title,
-              djId: inserted.dj_id,
+          setActiveRoom({
+              id: inserted.id, title: inserted.title, djId: inserted.dj_id,
               djName: inserted.profiles?.username || 'DJ',
               djAvatar: inserted.profiles?.photo_url || '',
-              coverUrl: inserted.cover_url,
-              startTime: inserted.created_at,
-              status: inserted.status,
-              listeners: 1,
-              isMicActive: false
-          };
-          setActiveRoom(newRoom);
+              coverUrl: inserted.cover_url, startTime: inserted.created_at,
+              status: inserted.status, listeners: 1, isMicActive: false
+          });
       }
-    } catch (e: any) {
-        tg?.showAlert(`Failed to create room: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -242,24 +203,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const dbPayload: any = {};
       if (updates.isMicActive !== undefined) dbPayload.is_mic_active = updates.isMicActive;
       if (updates.currentTrack !== undefined) dbPayload.track_id = updates.currentTrack?.id;
-      
       await supabase.from('rooms').update(dbPayload).eq('id', roomId);
-      
-      if (activeRoom?.id === roomId) {
-          const updated = { ...activeRoom, ...updates };
-          setActiveRoom(updated);
-          
-          const channel = supabase.channel(`room:${roomId}`);
-          await channel.subscribe(async (status) => {
-              if (status === 'SUBSCRIBED') {
-                  await channel.send({
-                      type: 'broadcast',
-                      event: 'room_sync',
-                      payload: updates,
-                  });
-              }
-          });
-      }
+      if (activeRoom?.id === roomId) setActiveRoom({ ...activeRoom, ...updates });
   };
 
   const deleteRoom = async (roomId: string) => {
@@ -272,11 +217,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const channel = supabase.channel(`room:${roomId}`);
     await channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        await channel.send({
-          type: 'broadcast',
-          event: 'message',
-          payload: message,
-        });
+        await channel.send({ type: 'broadcast', event: 'message', payload: message });
       }
     });
   };
@@ -290,8 +231,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return;
-    const { error } = await supabase.from('profiles').upsert({ id: currentUser.id, ...updates });
-    if (!error) setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+    await supabase.from('profiles').upsert({ id: currentUser.id, ...updates });
+    setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
   };
 
   const fetchUserById = async (userId: number): Promise<User | null> => {
@@ -307,9 +248,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const recordListen = async (trackId: string) => {
     if (!currentUser) return;
     const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-    if (trackData) {
-        await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
-    }
+    if (trackData) await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
   };
 
   const uploadTrack = async (data: UploadTrackData) => {
@@ -318,20 +257,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       let audioUrl = data.existingAudioUrl || '';
       let coverUrl = data.existingCoverUrl || '';
-      if (data.audioFile) {
-        audioUrl = await uploadImage(data.audioFile, 'music', `tracks/${currentUser.id}/${Date.now()}_${data.audioFile.name}`);
-      }
-      if (data.coverFile) {
-        coverUrl = await uploadImage(data.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_${data.coverFile.name}`);
-      }
+      if (data.audioFile) audioUrl = await uploadImage(data.audioFile, 'music', `tracks/${currentUser.id}/${Date.now()}_${data.audioFile.name}`);
+      if (data.coverFile) coverUrl = await uploadImage(data.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_${data.coverFile.name}`);
       await supabase.from('tracks').insert({
-        uploader_id: currentUser.id,
-        title: data.title,
-        description: data.description,
-        genre: data.genre,
-        audio_url: audioUrl,
-        cover_url: coverUrl,
-        duration: data.duration
+        uploader_id: currentUser.id, title: data.title, description: data.description,
+        genre: data.genre, audio_url: audioUrl, cover_url: coverUrl, duration: data.duration
       });
       await fetchTracks(currentUser.id);
     } finally {
@@ -344,19 +274,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setIsLoading(true);
     try {
       let coverUrl = '';
-      if (commonData.coverFile) {
-        coverUrl = await uploadImage(commonData.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_album`);
-      }
+      if (commonData.coverFile) coverUrl = await uploadImage(commonData.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_album`);
       for (const file of files) {
         const audioUrl = await uploadImage(file, 'music', `tracks/${currentUser.id}/${Date.now()}_${file.name}`);
         await supabase.from('tracks').insert({
-          uploader_id: currentUser.id,
-          title: file.name.replace(/\.[^/.]+$/, ""),
-          description: commonData.description,
-          genre: commonData.genre,
-          audio_url: audioUrl,
-          cover_url: coverUrl,
-          duration: 180
+          uploader_id: currentUser.id, title: file.name.replace(/\.[^/.]+$/, ""),
+          description: commonData.description, genre: commonData.genre,
+          audio_url: audioUrl, cover_url: coverUrl, duration: 180
         });
       }
       await fetchTracks(currentUser.id);
@@ -368,11 +292,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchUserPlaylists = async (userId: number): Promise<Playlist[]> => {
     const { data } = await supabase.from('playlists').select('*').eq('user_id', userId);
     const mapped = (data || []).map((p: any) => ({
-      id: p.id,
-      userId: p.user_id,
-      title: p.title,
-      coverUrl: p.cover_url,
-      createdAt: p.created_at
+      id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
     }));
     if (userId === currentUser?.id) setMyPlaylists(mapped);
     return mapped;
@@ -380,17 +300,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const fetchSavedPlaylists = async (userId: number): Promise<Playlist[]> => {
     const { data } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', userId);
-    const mapped = data?.map((d: any) => {
-        const p = d.playlists;
-        if (!p) return null;
-        return {
-            id: p.id,
-            userId: p.user_id,
-            title: p.title,
-            coverUrl: p.cover_url,
-            createdAt: p.created_at
-        };
-    }).filter(Boolean) as Playlist[] || [];
+    const mapped = data?.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({
+      id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
+    })) || [];
     if (userId === currentUser?.id) setSavedPlaylists(mapped);
     return mapped;
   };
@@ -408,18 +320,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleSavePlaylist = async (playlistId: string) => {
     if (!currentUser) return;
     const isSaved = savedPlaylists.some(p => p.id === playlistId);
-    if (isSaved) {
-        await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', playlistId);
-    } else {
-        await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: playlistId });
-    }
+    if (isSaved) await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', playlistId);
+    else await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: playlistId });
     await fetchSavedPlaylists(currentUser.id);
   };
 
   const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> => {
     const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url))').eq('playlist_id', playlistId);
-    const raw = data?.map((d: any) => d.tracks).filter(Boolean) || [];
-    return mapTracksData(raw, currentUser?.id);
+    return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], currentUser?.id);
   };
 
   const deleteTrack = async (trackId: string) => {
@@ -431,9 +339,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const a = document.createElement('a');
     a.href = track.audioUrl;
     a.download = `${track.title}.mp3`;
-    document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
   };
 
   const toggleLike = async (trackId: string) => {
@@ -441,26 +347,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const currentTrack = tracks.find(trk => trk.id === trackId);
     if (!currentTrack) return;
     const isLiked = currentTrack.isLikedByCurrentUser;
-    if (isLiked) {
-        await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
-    } else {
-        await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
-    }
+    if (isLiked) await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+    else await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
     setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, isLikedByCurrentUser: !isLiked, likes: isLiked ? trk.likes - 1 : trk.likes + 1 } : trk));
   };
 
   const addComment = async (trackId: string, text: string) => {
     if (!currentUser) return;
-    const { data, error } = await supabase.from('comments').insert({
-        track_id: trackId,
-        user_id: currentUser.id,
-        text
-    }).select().single();
+    const { data, error } = await supabase.from('comments').insert({ track_id: trackId, user_id: currentUser.id, text }).select().single();
     if (!error && data) {
-        const newComment: Comment = {
-            id: data.id, userId: currentUser.id, username: currentUser.username,
-            avatar: currentUser.photoUrl, text, createdAt: data.created_at
-        };
+        const newComment: Comment = { id: data.id, userId: currentUser.id, username: currentUser.username, avatar: currentUser.photoUrl, text, createdAt: data.created_at };
         setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, comments: [newComment, ...(trk.comments || [])] } : trk));
     }
   };
@@ -473,62 +369,58 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const getLikedTracks = async (userId: number): Promise<Track[]> => {
     const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
     if (!likes || likes.length === 0) return [];
-    const ids = likes.map(l => l.track_id);
-    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
+    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', likes.map(l => l.track_id));
     return mapTracksData(trks || [], currentUser?.id);
   };
 
   const getUserHistory = async (userId: number): Promise<Track[]> => {
     const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', { ascending: false }).limit(20);
     if (!hist || hist.length === 0) return [];
-    const ids = [...new Set(hist.map(h => h.track_id))];
-    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
+    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', [...new Set(hist.map(h => h.track_id))]);
     return mapTracksData(trks || [], currentUser?.id);
   };
 
   useEffect(() => {
+    let isMounted = true;
     const init = async () => {
         try {
-            setIsLoading(true);
+            if (isMounted) setIsLoading(true);
             const tg = (window as any).Telegram?.WebApp;
             
-            // Wait a small bit for TG object to be fully injected on mobile
-            if (!tg?.initDataUnsafe?.user) {
-              await new Promise(r => setTimeout(r, 100));
-            }
+            let userId: number | undefined;
 
             if (tg?.initDataUnsafe?.user) {
                 const tgUser = tg.initDataUnsafe.user;
+                userId = tgUser.id;
                 let user = await fetchUserById(tgUser.id);
                 
                 if (!user) {
-                    const { error } = await supabase.from('profiles').insert({
-                        id: tgUser.id,
-                        username: tgUser.username || `user_${tgUser.id}`,
-                        first_name: tgUser.first_name,
-                        last_name: tgUser.last_name,
-                        photo_url: tgUser.photo_url || ''
+                    await supabase.from('profiles').insert({
+                        id: tgUser.id, username: tgUser.username || `user_${tgUser.id}`,
+                        first_name: tgUser.first_name, last_name: tgUser.last_name, photo_url: tgUser.photo_url || ''
                     });
-                    if (!error) user = await fetchUserById(tgUser.id);
+                    user = await fetchUserById(tgUser.id);
                 }
 
-                if (user) {
+                if (user && isMounted) {
                     setCurrentUser(user);
                     await fetchUserPlaylists(user.id);
                     await fetchSavedPlaylists(user.id);
                 }
             }
             
-            await fetchTracks();
-            await fetchRooms();
+            if (isMounted) {
+              await fetchTracks(userId);
+              await fetchRooms();
+            }
         } catch (err) {
-            console.error("Initialization error:", err);
+            console.error("Init fail", err);
         } finally {
-            // CRITICAL: Always reset loading state to avoid black screen
-            setIsLoading(false);
+            if (isMounted) setIsLoading(false);
         }
     };
     init();
+    return () => { isMounted = false; };
   }, [fetchTracks, fetchRooms]);
 
   return React.createElement(StoreContext.Provider, {
