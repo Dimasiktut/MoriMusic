@@ -13,11 +13,12 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile, onNext, onPrev }) => {
-  const { recordListen } = useStore();
+  const { recordListen, setAudioIntensity } = useStore();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hasCountedListen, setHasCountedListen] = useState(false);
+  const animationFrameRef = useRef<number>(0);
 
   useEffect(() => {
     if (track && audioRef.current) {
@@ -26,8 +27,33 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
       setHasCountedListen(false);
     } else {
         setIsPlaying(false);
+        setAudioIntensity(0);
     }
-  }, [track]);
+  }, [track, setAudioIntensity]);
+
+  // Reactive Intensity Simulation
+  useEffect(() => {
+    const updateIntensity = () => {
+      if (isPlaying) {
+        // Mocking intensity for the Aura effect
+        // In a real production app we'd use Web Audio API AnalyserNode
+        const mockPulse = 0.4 + Math.random() * 0.6;
+        setAudioIntensity(mockPulse);
+        animationFrameRef.current = requestAnimationFrame(updateIntensity);
+      } else {
+        setAudioIntensity(0);
+      }
+    };
+
+    if (isPlaying) {
+      updateIntensity();
+    } else {
+      setAudioIntensity(0);
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+
+    return () => cancelAnimationFrame(animationFrameRef.current);
+  }, [isPlaying, setAudioIntensity]);
 
   const togglePlay = () => {
     if (!audioRef.current) return;

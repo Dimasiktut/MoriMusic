@@ -1,14 +1,14 @@
 
 export interface User {
-  id: number; // Telegram ID is number (bigint)
+  id: number;
   username: string;
   firstName?: string;
   lastName?: string;
   photoUrl?: string;
-  headerUrl?: string; // Background banner for profile
+  headerUrl?: string;
   bio?: string;
   links: {
-    telegram?: string; // Artist Channel
+    telegram?: string;
     yandex?: string;
     spotify?: string;
     soundcloud?: string;
@@ -19,21 +19,30 @@ export interface User {
     likesReceived: number;
     totalPlays: number;
   };
-  badges?: string[]; // 'creator', 'meloman', 'star', 'verified'
+  badges?: string[];
   isVerified?: boolean;
 }
 
 export interface Comment {
-  id: string; // UUID
+  id: string;
   userId: number;
   username: string;
   avatar?: string;
   text: string;
-  createdAt: string; // ISO string from DB
+  createdAt: string;
+}
+
+export interface RoomMessage {
+  id: string;
+  userId: number;
+  username: string;
+  text: string;
+  type: 'text' | 'system';
+  createdAt: string;
 }
 
 export interface Track {
-  id: string; // UUID from DB
+  id: string;
   uploaderId: number;
   uploaderName: string;
   uploaderAvatar?: string;
@@ -43,12 +52,12 @@ export interface Track {
   coverUrl: string;
   audioUrl: string;
   duration: number;
-  createdAt: string; // ISO string from DB
+  createdAt: string;
   plays: number;
-  likes: number; // Count
+  likes: number;
   comments: Comment[];
   isLikedByCurrentUser?: boolean;
-  isVerifiedUploader?: boolean; // New field for UI
+  isVerifiedUploader?: boolean;
 }
 
 export interface Playlist {
@@ -60,22 +69,21 @@ export interface Playlist {
   trackCount?: number; 
 }
 
-export interface Concert {
+export interface Room {
   id: string;
   title: string;
-  artistId: number;
-  artistName: string;
-  artistAvatar: string;
+  djId: number;
+  djName: string;
+  djAvatar: string;
   coverUrl: string;
-  startTime: string; // ISO
+  startTime: string;
   status: 'live' | 'upcoming' | 'ended';
-  viewers: number;
-  streamUrl?: string; // Mock URL for audio/video
-  donationsGoal?: number;
-  currentDonations?: number;
+  listeners: number;
+  streamUrl?: string;
+  currentTrack?: Track;
 }
 
-export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings' | 'concerts';
+export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings' | 'rooms';
 
 export type ChartType = 'week' | 'month';
 

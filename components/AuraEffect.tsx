@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useStore } from '../services/store';
 
 export type VibeType = 'phonk' | 'lofi' | 'electronic' | 'rock' | 'default';
 
@@ -16,16 +17,34 @@ const VIBE_COLORS: Record<VibeType, { primary: string, secondary: string }> = {
 };
 
 const AuraEffect: React.FC<AuraEffectProps> = ({ vibe = 'default' }) => {
+  const { audioIntensity } = useStore();
   const colors = VIBE_COLORS[vibe];
 
+  // Calculate dynamic scaling and blur based on intensity
+  const scale = 1 + (audioIntensity * 0.3);
+  const opacity = 0.3 + (audioIntensity * 0.4);
+  const blur = 60 + (audioIntensity * 40);
+
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-40">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none transition-opacity duration-300" style={{ opacity }}>
       {/* Primary Glowing Blob */}
-      <div className={`absolute top-[-10%] left-[-10%] w-[80%] h-[80%] rounded-full ${colors.primary} blur-[80px] animate-pulse duration-[4000ms]`} />
+      <div 
+        className={`absolute top-[-10%] left-[-10%] w-[80%] h-[80%] rounded-full ${colors.primary} animate-pulse duration-[4000ms] transition-transform duration-75`} 
+        style={{ 
+            filter: `blur(${blur}px)`,
+            transform: `scale(${scale})`
+        }} 
+      />
       
       {/* Secondary Moving Blob */}
-      <div className={`absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] rounded-full ${colors.secondary} blur-[100px] animate-bounce-slow`} 
-           style={{ animationDuration: '8s' }} />
+      <div 
+        className={`absolute bottom-[-20%] right-[-10%] w-[70%] h-[70%] rounded-full ${colors.secondary} animate-bounce-slow transition-transform duration-100`} 
+        style={{ 
+            animationDuration: '8s', 
+            filter: `blur(${blur + 20}px)`,
+            transform: `scale(${1 + (audioIntensity * 0.15)}) translate(${(audioIntensity * 30)}px, -${(audioIntensity * 30)}px)`
+        }} 
+      />
       
       {/* Center Aura for Avatar */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-white/10 blur-[40px] rounded-full" />

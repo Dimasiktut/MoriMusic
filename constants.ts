@@ -22,21 +22,11 @@ export const INITIAL_USER: User = {
   },
 };
 
-// --- TELEGRAM GROUP CONFIGURATION ---
-// ВАЖНО: Вставьте сюда токен от @morimusics_bot (получить у @BotFather)
 export const TELEGRAM_BOT_TOKEN = '8597639400:AAGg76KAn5onhXZGLaWQx6jDJbaBah4emBg'; 
-
-// ID канала или группы для проверки подписки
 export const TELEGRAM_CHAT_ID = '@clan_mori'; 
-
-// Ссылка, которая откроется, если пользователь не подписан
 export const TELEGRAM_GROUP_LINK = 'https://t.me/clan_mori';
-
-// Ссылка на ваше Mini App для генерации Deep Links
-// ВАЖНО: Чтобы эта ссылка работала, вы должны создать приложение в BotFather через команду /newapp
 export const TELEGRAM_APP_LINK = 'https://t.me/morimusics_bot/app';
 
-// --- TRANSLATIONS ---
 export type Language = 'en' | 'ru';
 
 export const TRANSLATIONS = {
@@ -45,7 +35,7 @@ export const TRANSLATIONS = {
     nav_charts: 'Charts',
     nav_upload: 'Upload',
     nav_profile: 'Profile',
-    nav_concerts: 'Live', // New
+    nav_concerts: 'Rooms',
     
     feed_new: 'New',
     feed_hot: 'Hot',
@@ -137,15 +127,17 @@ export const TRANSLATIONS = {
     settings_saving: 'Saving...',
     settings_error: 'Failed to save changes.',
     
-    // Concerts
-    concerts_title: 'Live Stages',
-    concerts_live_now: 'Live Now',
-    concerts_upcoming: 'Upcoming',
-    concerts_viewers: 'viewers',
-    concerts_donate: 'Send Stars',
+    concerts_title: 'DJ Rooms',
+    concerts_live_now: 'Live Sessions',
+    concerts_upcoming: 'Upcoming Rooms',
+    concerts_viewers: 'listeners',
     concerts_chat_placeholder: 'Say something...',
-    concerts_end: 'Stream Ended',
-    concerts_donate_success: 'Stars Sent!',
+    concerts_end: 'Session Ended',
+    concerts_create: 'Create Room',
+    concerts_create_title: 'Room Title',
+    concerts_create_cover: 'Room Cover',
+    concerts_create_btn: 'Start Session',
+    concerts_close: 'End Session',
     
     link_spotify: 'Spotify',
     link_soundcloud: 'SoundCloud',
@@ -159,7 +151,7 @@ export const TRANSLATIONS = {
     nav_charts: 'Чарты',
     nav_upload: 'Загрузка',
     nav_profile: 'Профиль',
-    nav_concerts: 'Live',
+    nav_concerts: 'Комнаты',
     
     feed_new: 'Новое',
     feed_hot: 'Топ',
@@ -171,7 +163,7 @@ export const TRANSLATIONS = {
     track_share: 'Поделиться',
     track_copied: 'Скопировано!',
     track_download: 'Скачать трек',
-    track_downloading: 'Скачивание...',
+    track_downloading: 'Скопировано!',
     track_delete: 'Удалить',
     track_delete_confirm: 'Вы уверены, что хотите удалить этот трек? Это действие нельзя отменить.',
     track_listen_text: 'Слушай',
@@ -251,14 +243,17 @@ export const TRANSLATIONS = {
     settings_saving: 'Сохранение...',
     settings_error: 'Ошибка сохранения.',
 
-    concerts_title: 'Live Сцена',
+    concerts_title: 'DJ Комнаты',
     concerts_live_now: 'В эфире',
-    concerts_upcoming: 'Афиша',
-    concerts_viewers: 'зрителей',
-    concerts_donate: 'Донат',
+    concerts_upcoming: 'Афиша комнат',
+    concerts_viewers: 'слушателей',
     concerts_chat_placeholder: 'Написать в чат...',
-    concerts_end: 'Трансляция завершена',
-    concerts_donate_success: 'Звезды отправлены!',
+    concerts_end: 'Сессия завершена',
+    concerts_create: 'Создать комнату',
+    concerts_create_title: 'Название комнаты',
+    concerts_create_cover: 'Обложка комнаты',
+    concerts_create_btn: 'Начать эфир',
+    concerts_close: 'Завершить эфир',
 
     link_spotify: 'Spotify',
     link_soundcloud: 'SoundCloud',

@@ -6,7 +6,7 @@ import Feed from './pages/Feed';
 import Charts from './pages/Charts';
 import Upload from './pages/Upload';
 import Profile from './pages/Profile';
-import Concerts from './pages/Concerts';
+import Rooms from './pages/Concerts';
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
 import { Home, BarChart2, UploadCloud, User, Video } from './components/ui/Icons';
@@ -17,7 +17,7 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
   const tabs = [
     { id: 'feed', icon: Home, label: t('nav_feed') },
     { id: 'charts', icon: BarChart2, label: t('nav_charts') },
-    { id: 'concerts', icon: Video, label: t('nav_concerts') },
+    { id: 'rooms', icon: Video, label: t('nav_concerts') },
     { id: 'upload', icon: UploadCloud, label: t('nav_upload') },
     { id: 'profile', icon: User, label: t('nav_profile') },
   ];
@@ -56,7 +56,6 @@ const MainLayout: React.FC = () => {
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
-        // Fix: Use type casting to any to access window.Telegram safely
         const tgParam = (window as any).Telegram?.WebApp?.initDataUnsafe?.start_param;
         const startParam = tgParam || new URLSearchParams(window.location.search).get('startapp');
 
@@ -101,7 +100,7 @@ const MainLayout: React.FC = () => {
     switch (activeTab) {
       case 'feed': return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       case 'charts': return <Charts onPlayTrack={handlePlayTrack} />;
-      case 'concerts': return <Concerts />;
+      case 'rooms': return <Rooms />;
       case 'upload': return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
       case 'profile': return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} />;
       default: return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
@@ -111,7 +110,7 @@ const MainLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-black text-white font-sans selection:bg-sky-400/30">
       <main className="max-w-md mx-auto min-h-screen relative shadow-2xl overflow-hidden bg-black">
-        <div className="h-full overflow-y-auto custom-scrollbar">
+        <div className="h-full overflow-y-auto custom-scrollbar no-scrollbar">
             {renderContent()}
         </div>
         <AudioPlayer track={currentTrack} onClose={() => setCurrentTrack(null)} onOpenProfile={handleOpenProfile} onNext={handleNextTrack} onPrev={handlePrevTrack} />
