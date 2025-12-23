@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Track, User, Comment, Playlist, Concert } from '../types';
 import { INITIAL_USER, TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
 import { supabase } from './supabase';
@@ -91,7 +91,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (error || !userTracks) return { uploads: 0, totalPlays: 0, likesReceived: 0 };
 
       const uploads = userTracks.length;
-      const totalPlays = userTracks.reduce((sum, t) => sum + t.plays, 0);
+      const totalPlays = userTracks.reduce((sum, t) => sum + (t.plays || 0), 0);
       const trackIds = userTracks.map(t => t.id);
 
       let likesReceived = 0;
@@ -234,18 +234,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [language]);
 
   const donateToConcert = useCallback(async (concertId: string, amount: number): Promise<boolean> => {
-      console.log(`Processing donation of ${amount} stars for concert ${concertId}`);
-      return new Promise((resolve) => {
-          setTimeout(() => {
-              setConcerts(prev => prev.map(c => {
-                  if (c.id === concertId) {
-                      return { ...c, currentDonations: (c.currentDonations || 0) + amount };
-                  }
-                  return c;
-              }));
-              resolve(true);
-          }, 1500);
-      });
+      setConcerts(prev => prev.map(c => {
+          if (c.id === concertId) {
+              return { ...c, currentDonations: (c.currentDonations || 0) + amount };
+          }
+          return c;
+      }));
+      return true;
   }, []);
 
   const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
@@ -254,20 +249,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const mapped = (data as any[] || []).map((item) => ({
               id: item.id, userId: item.user_id, title: item.title, coverUrl: item.cover_url, createdAt: item.created_at, trackCount: 0 
           }));
+          // Use ref or handle state carefully to avoid loops
           if (userId === currentUser?.id) setMyPlaylists(mapped);
           return mapped;
       } catch (e) { return []; }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const fetchSavedPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
           const { data } = await supabase.from('saved_playlists').select('playlist_id, playlists:playlist_id(*)').eq('user_id', userId);
-          return (data as any[] || []).map((item) => {
+          const mapped = (data as any[] || []).map((item) => {
               const p = item.playlists;
               return p ? { id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at, trackCount: 0 } : null;
           }).filter(Boolean) as Playlist[];
+          if (userId === currentUser?.id) setSavedPlaylists(mapped);
+          return mapped;
       } catch (e) { return []; }
-  }, []);
+  }, [currentUser?.id]);
 
   const fetchPlaylistTracks = useCallback(async (playlistId: string): Promise<Track[]> => {
       try {
@@ -275,13 +273,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           const rawTracks = (data as any[] || []).map((item) => item.tracks).filter(Boolean);
           return await mapTracksData(rawTracks, currentUser?.id);
       } catch (e) { return []; }
-  }, [currentUser, mapTracksData]);
+  }, [currentUser?.id, mapTracksData]);
 
   const createPlaylist = useCallback(async (title: string) => {
       if(!currentUser) return;
       await supabase.from('playlists').insert({ user_id: currentUser.id, title: title, cover_url: null });
       await fetchUserPlaylists(currentUser.id);
-  }, [currentUser, fetchUserPlaylists]);
+  }, [currentUser?.id, fetchUserPlaylists]);
 
   const toggleSavePlaylist = useCallback(async (playlistId: string) => {
       if (!currentUser) return;
@@ -291,17 +289,20 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setSavedPlaylists(prev => prev.filter(p => p.id !== playlistId));
       } else {
           await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: playlistId });
-          const updated = await fetchSavedPlaylists(currentUser.id);
-          setSavedPlaylists(updated);
+          await fetchSavedPlaylists(currentUser.id);
       }
-  }, [currentUser, savedPlaylists, fetchSavedPlaylists]);
+  }, [currentUser?.id, savedPlaylists, fetchSavedPlaylists]);
 
   const addToPlaylist = useCallback(async (trackId: string, playlistId: string) => {
       if(!currentUser) return;
       await supabase.from('playlist_items').insert({ playlist_id: playlistId, track_id: trackId });
-  }, [currentUser]);
+  }, [currentUser?.id]);
+
+  const isInitialized = useRef(false);
 
   useEffect(() => {
+    if (isInitialized.current) return;
+    
     const initApp = async () => {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
@@ -326,19 +327,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                   bio: '',
                   links: {}
               };
-              
-              const { error: insertError } = await supabase.from('profiles').insert(newProfile);
-              if (!insertError) {
-                  // @ts-ignore
-                  profile = newProfile;
-              } else {
-                  console.error("Failed to create profile:", insertError);
-              }
+              await supabase.from('profiles').insert(newProfile);
+              // @ts-ignore
+              profile = newProfile;
           }
 
           if (profile) {
             const stats = await getUserStats(profile.id);
-            
             setCurrentUser({
               id: profile.id, 
               username: profile.username, 
@@ -349,12 +344,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               bio: profile.bio, 
               links: profile.links || {}, 
               stats: stats, 
-              badges: calculateBadges(stats, profile.isVerified)
+              badges: calculateBadges(stats, profile.is_verified)
             });
             await fetchUserPlaylists(userId);
-            setSavedPlaylists(await fetchSavedPlaylists(userId));
-          } else {
-             setCurrentUser({ ...INITIAL_USER, id: userId, username: tgUser.username || `user_${userId}`, firstName: tgUser.first_name, photoUrl: tgUser.photo_url });
+            await fetchSavedPlaylists(userId);
           }
         }
         await fetchTracks(userId);
@@ -363,6 +356,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         window.Telegram?.WebApp?.expand();
         // @ts-ignore
         window.Telegram?.WebApp?.ready();
+        isInitialized.current = true;
       } catch (e) { console.error(e); } finally { setIsLoading(false); }
     };
     initApp();
@@ -395,133 +389,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const checkGroupMembership = useCallback(async (userId: number): Promise<boolean> => { 
-      if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-          console.error("Telegram Bot Token or Chat ID is missing in constants.ts");
-          return false;
-      }
-
-      console.log(`Checking membership for ${userId} in ${TELEGRAM_CHAT_ID}...`);
-
+      if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return false;
       try {
-          const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}&_=${Date.now()}`;
-          const response = await fetch(url, { cache: 'no-store' }); 
+          const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}`;
+          const response = await fetch(url);
           const data = await response.json();
-
-          if (!data.ok) {
-              console.error("Telegram API Error:", data.description);
-              return false;
-          }
-
+          if (!data.ok) return false;
           const status = data.result?.status;
-          const validStatuses = ['creator', 'administrator', 'member'];
-          if (validStatuses.includes(status)) return true;
-          if (status === 'restricted' && data.result.is_member) return true;
-
-          return false;
-      } catch (e) {
-          console.error("Membership check failed (Network/CORS):", e);
-          return false; 
-      }
+          return ['creator', 'administrator', 'member'].includes(status);
+      } catch (e) { return false; }
   }, []);
 
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
-    
     const isMember = await checkGroupMembership(currentUser.id);
-    if (!isMember) {
-        alert(t('upload_sub_required'));
-        return;
-    }
-
+    if (!isMember) { alert(t('upload_sub_required')); return; }
     setIsLoading(true);
     try {
-        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
-        if (!existingProfile) {
-            await supabase.from('profiles').insert({
-                id: currentUser.id,
-                username: currentUser.username,
-                first_name: currentUser.firstName,
-                last_name: currentUser.lastName,
-                photo_url: currentUser.photoUrl,
-                bio: currentUser.bio || '',
-                links: currentUser.links || {}
-            });
-        }
-
         let audioUrl = data.existingAudioUrl || '';
         if (data.audioFile && !audioUrl) audioUrl = await _uploadFileToStorage(data.audioFile, `audio/${currentUser.id}`);
         let coverUrl = data.existingCoverUrl || 'https://picsum.photos/400/400?random=default';
         if (data.coverFile && !data.existingCoverUrl) coverUrl = await _uploadFileToStorage(data.coverFile, `covers/${currentUser.id}`);
-        
-        await _insertTrackToDb({ 
-            uploader_id: currentUser.id, 
-            title: data.title, 
-            description: data.description, 
-            genre: data.genre, 
-            audio_url: audioUrl, 
-            cover_url: coverUrl, 
-            duration: Math.round(data.duration) 
-        });
-        
+        await _insertTrackToDb({ uploader_id: currentUser.id, title: data.title, description: data.description, genre: data.genre, audio_url: audioUrl, cover_url: coverUrl, duration: Math.round(data.duration) });
         await fetchTracks(currentUser.id);
-    } catch (e) {
-        console.error("Upload failed", e);
-        alert("Upload failed.");
-    } finally { 
-        setIsLoading(false); 
-    }
-  }, [currentUser, fetchTracks, checkGroupMembership, t]);
+    } catch (e) { alert("Upload failed."); } finally { setIsLoading(false); }
+  }, [currentUser?.id, fetchTracks, checkGroupMembership, t]);
 
   const uploadAlbum = useCallback(async (files: File[], commonData: any) => {
     if (!currentUser) return;
-
     const isMember = await checkGroupMembership(currentUser.id);
-    if (!isMember) {
-        alert(t('upload_sub_required'));
-        return;
-    }
-
+    if (!isMember) { alert(t('upload_sub_required')); return; }
     setIsLoading(true);
     try {
-        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
-        if (!existingProfile) {
-            await supabase.from('profiles').insert({
-                id: currentUser.id,
-                username: currentUser.username,
-                first_name: currentUser.firstName,
-                last_name: currentUser.lastName,
-                photo_url: currentUser.photoUrl,
-                bio: currentUser.bio || '',
-                links: currentUser.links || {}
-            });
-        }
-
         let commonCoverUrl: string | undefined = undefined;
         if (commonData.coverFile) commonCoverUrl = await _uploadFileToStorage(commonData.coverFile, `covers/${currentUser.id}`);
         for (const file of files) {
             const audioUrl = await _uploadFileToStorage(file, `audio/${currentUser.id}`);
-            await _insertTrackToDb({ 
-                uploader_id: currentUser.id, 
-                title: file.name.replace(/\.[^/.]+$/, ""), 
-                description: commonData.description, 
-                genre: commonData.genre, 
-                audio_url: audioUrl, 
-                cover_url: commonCoverUrl || 'https://picsum.photos/400/400', 
-                duration: 180 
-            });
+            await _insertTrackToDb({ uploader_id: currentUser.id, title: file.name.replace(/\.[^/.]+$/, ""), description: commonData.description, genre: commonData.genre, audio_url: audioUrl, cover_url: commonCoverUrl || 'https://picsum.photos/400/400', duration: 180 });
         }
         await fetchTracks(currentUser.id);
-    } catch (e) {
-        console.error("Album upload failed", e);
-        alert("Upload failed.");
-    } finally { 
-        setIsLoading(false); 
-    }
-  }, [currentUser, fetchTracks, checkGroupMembership, t]);
+    } catch (e) { alert("Upload failed."); } finally { setIsLoading(false); }
+  }, [currentUser?.id, fetchTracks, checkGroupMembership, t]);
 
   const deleteTrack = useCallback(async (trackId: string) => {
     try {
-        await Promise.all([ supabase.from('comments').delete().eq('track_id', trackId), supabase.from('track_likes').delete().eq('track_id', trackId), supabase.from('listen_history').delete().eq('track_id', trackId), supabase.from('playlist_items').delete().eq('track_id', trackId) ]);
         await supabase.from('tracks').delete().eq('id', trackId);
         setTracks(prev => prev.filter(t => t.id !== trackId));
     } catch (e) {}
@@ -538,93 +449,47 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleLike = useCallback(async (trackId: string) => { 
       if (!currentUser) return;
-      setTracks(prev => prev.map(t => {
-          if (t.id === trackId) {
-             return { ...t, likes: t.isLikedByCurrentUser ? t.likes - 1 : t.likes + 1, isLikedByCurrentUser: !t.isLikedByCurrentUser };
-          }
-          return t;
-      }));
+      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, likes: t.isLikedByCurrentUser ? t.likes - 1 : t.likes + 1, isLikedByCurrentUser: !t.isLikedByCurrentUser } : t));
       const { data } = await supabase.from('track_likes').select('*').eq('user_id', currentUser.id).eq('track_id', trackId).maybeSingle();
-      if (data) {
-          await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
-      } else {
-          await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
-      }
-  }, [currentUser]);
+      if (data) await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+      else await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+  }, [currentUser?.id]);
 
   const addComment = useCallback(async (trackId: string, text: string) => { 
       if (!currentUser) return;
-      const { data, error } = await supabase.from('comments').insert({
-          track_id: trackId,
-          user_id: currentUser.id,
-          text: text
-      }).select().single();
-      
+      const { data, error } = await supabase.from('comments').insert({ track_id: trackId, user_id: currentUser.id, text: text }).select().single();
       if (!error && data) {
-          const newComment: Comment = {
-             id: data.id,
-             userId: currentUser.id,
-             username: currentUser.username,
-             avatar: currentUser.photoUrl,
-             text: text,
-             createdAt: data.created_at
-          };
+          const newComment: Comment = { id: data.id, userId: currentUser.id, username: currentUser.username, avatar: currentUser.photoUrl, text: text, createdAt: data.created_at };
           setTracks(prev => prev.map(t => t.id === trackId ? { ...t, comments: [newComment, ...(t.comments || [])] } : t));
       }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.username, currentUser?.photoUrl]);
 
   const recordListen = useCallback(async (trackId: string) => { 
       if (!currentUser) return;
-      
-      // 1. Optimistic local update
+      // Optimistic update
       setTracks(prev => prev.map(t => t.id === trackId ? { ...t, plays: (t.plays || 0) + 1 } : t));
-
       try {
-          // 2. Insert into history
           await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
-          
-          // 3. Increment total plays in the 'tracks' table
-          const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-          if (trackData) {
-              await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
-          }
+          // Atomic increment in DB
+          await supabase.rpc('increment_track_plays', { row_id: trackId });
       } catch (err) {
-          console.error("Failed to record listen:", err);
+          // Fallback if RPC fails
+          const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+          if (trackData) await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
       }
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   const updateProfile = useCallback(async (updates: Partial<User>) => { 
       if (!currentUser) return;
-      const { error } = await supabase.from('profiles').update({
-          first_name: updates.firstName,
-          last_name: updates.lastName,
-          bio: updates.bio,
-          photo_url: updates.photoUrl,
-          header_url: updates.headerUrl,
-          links: updates.links
-      }).eq('id', currentUser.id);
-
-      if (!error) {
-          setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
-      }
-  }, [currentUser]);
+      const { error } = await supabase.from('profiles').update({ first_name: updates.firstName, last_name: updates.lastName, bio: updates.bio, photo_url: updates.photoUrl, header_url: updates.headerUrl, links: updates.links }).eq('id', currentUser.id);
+      if (!error) setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+  }, [currentUser?.id]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => { 
       const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (data) {
           const stats = await getUserStats(data.id);
-          return {
-              id: data.id,
-              username: data.username,
-              firstName: data.first_name,
-              lastName: data.last_name,
-              photoUrl: data.photo_url,
-              headerUrl: data.header_url,
-              bio: data.bio,
-              links: data.links || {},
-              stats: stats,
-              badges: calculateBadges(stats, data.isVerified)
-          };
+          return { id: data.id, username: data.username, firstName: data.first_name, lastName: data.last_name, photoUrl: data.photo_url, headerUrl: data.header_url, bio: data.bio, links: data.links || {}, stats: stats, badges: calculateBadges(stats, data.is_verified) };
       }
       return null; 
   }, [getUserStats]);
@@ -632,15 +497,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => { 
       const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
       return mapTracksData(data || [], currentUser?.id);
-  }, [currentUser, mapTracksData]);
+  }, [currentUser?.id, mapTracksData]);
 
   const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
       if(!data) return [];
-      const ids = data.map(i => i.track_id);
-      const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
+      const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', data.map(i => i.track_id));
       return mapTracksData(tracks || [], currentUser?.id);
-  }, [currentUser, mapTracksData]);
+  }, [currentUser?.id, mapTracksData]);
 
   const getUserHistory = useCallback(async (userId: number): Promise<Track[]> => {
       const { data } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', {ascending:false}).limit(20);
@@ -648,7 +512,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const ids = [...new Set(data.map(i => i.track_id))];
       const { data: tracks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
       return mapTracksData(tracks || [], currentUser?.id);
-  }, [currentUser, mapTracksData]);
+  }, [currentUser?.id, mapTracksData]);
 
   return React.createElement(
     StoreContext.Provider,

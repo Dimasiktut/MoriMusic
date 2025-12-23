@@ -4,7 +4,7 @@ import { useStore } from '../services/store';
 import { 
     Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
     ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, 
-    Zap, TrendingUp, Globe, Send, ExternalLink 
+    Zap, TrendingUp, Globe, Send
 } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
@@ -19,7 +19,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t, language } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   
@@ -37,42 +37,49 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [loadingPlaylistTracks, setLoadingPlaylistTracks] = useState(false);
 
-  // Determine if it's the current user's profile to prevent redundant fetches
+  // Determine if it's the current user's profile
   const isOwnProfile = useMemo(() => {
     if (!targetUserId) return true;
     return currentUser?.id === targetUserId;
   }, [targetUserId, currentUser?.id]);
 
   useEffect(() => {
+    let isMounted = true;
     const loadUser = async () => {
-        // If targetUserId is same as current profile, don't reload
-        if (profileUser?.id === targetUserId && targetUserId !== null) return;
+        if (!targetUserId || targetUserId === currentUser?.id) {
+            if (isMounted) setProfileUser(currentUser);
+            return;
+        }
 
-        if (targetUserId && targetUserId !== currentUser?.id) {
-            setLoadingProfile(true);
-            const user = await fetchUserById(targetUserId);
+        if (profileUser?.id === targetUserId) return;
+
+        if (isMounted) setLoadingProfile(true);
+        const user = await fetchUserById(targetUserId);
+        if (isMounted) {
             setProfileUser(user);
             setLoadingProfile(false);
-        } else {
-            setProfileUser(currentUser);
         }
     };
     loadUser();
-  }, [targetUserId, currentUser?.id, fetchUserById]); // Only depend on ID, not full object
+    return () => { isMounted = false; };
+  }, [targetUserId, currentUser?.id, fetchUserById]);
 
   useEffect(() => {
     const loadData = async () => {
         if (!profileUser) return;
         if (activeTab === 'likes' && likedTracks.length === 0) {
             setLoadingLikes(true);
-            setLikedTracks(await getLikedTracks(profileUser.id));
+            const data = await getLikedTracks(profileUser.id);
+            setLikedTracks(data);
             setLoadingLikes(false);
         } else if (activeTab === 'history' && historyTracks.length === 0) {
             setLoadingHistory(true);
-            setHistoryTracks(await getUserHistory(profileUser.id));
+            const data = await getUserHistory(profileUser.id);
+            setHistoryTracks(data);
             setLoadingHistory(false);
         } else if (activeTab === 'playlists' && playlists.length === 0) {
-            setPlaylists(await fetchUserPlaylists(profileUser.id));
+            const data = await fetchUserPlaylists(profileUser.id);
+            setPlaylists(data);
         }
     };
     loadData();
@@ -82,7 +89,8 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
       const loadPlaylistTracks = async () => {
           if (selectedPlaylist) {
               setLoadingPlaylistTracks(true);
-              setPlaylistTracks(await fetchPlaylistTracks(selectedPlaylist.id));
+              const data = await fetchPlaylistTracks(selectedPlaylist.id);
+              setPlaylistTracks(data);
               setLoadingPlaylistTracks(false);
           }
       };
@@ -113,22 +121,15 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
       if (!profileUser) return 'default';
       const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
       if (userTracks.length === 0) return 'default';
-      
       const genreCounts: Record<string, number> = {};
-      userTracks.forEach(t => {
-          genreCounts[t.genre] = (genreCounts[t.genre] || 0) + 1;
-      });
-      
+      userTracks.forEach(t => { genreCounts[t.genre] = (genreCounts[t.genre] || 0) + 1; });
       const sortedGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
       if (sortedGenres.length === 0) return 'default';
-      
       const topGenre = sortedGenres[0][0].toLowerCase();
-      
       if (topGenre.includes('phonk')) return 'phonk';
       if (topGenre.includes('lo-fi') || topGenre.includes('chill')) return 'lofi';
       if (topGenre.includes('electronic') || topGenre.includes('techno')) return 'electronic';
       if (topGenre.includes('rock')) return 'rock';
-      
       return 'default';
   };
 
@@ -220,7 +221,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            {/* Social Links Block */}
            <div className="flex items-center justify-center gap-3 mt-5">
                 {profileUser.links?.telegram && (
-                    <a href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-sky-500/10 rounded-2xl border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
+                    <a href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-sky-500/10 rounded-2xl border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
                         <Send size={18} />
                     </a>
                 )}
