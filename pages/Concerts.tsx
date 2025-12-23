@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Room, RoomMessage, Track, Playlist } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Headphones } from '../components/ui/Icons';
+import { Room, RoomMessage, Track } from '../types';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
-  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, tracks, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks } = useStore();
+  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks } = useStore();
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
