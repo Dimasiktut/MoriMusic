@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
@@ -84,6 +84,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isRoomMinimized, setRoomMinimized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [audioIntensity, setAudioIntensity] = useState(0);
+  const isLoadedRef = useRef(false);
   
   const [language, setLanguageState] = useState<Language>(() => {
     const saved = localStorage.getItem('mori_language');
@@ -113,24 +114,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
-      if (!rawTracks || rawTracks.length === 0) return [];
-      
-      let userLikes: string[] = [];
-      if (currentUserId) {
-        try {
-          const { data: likesData } = await supabase.from('track_likes').select('track_id').eq('user_id', currentUserId);
-          if (likesData) userLikes = likesData.map(l => l.track_id);
-        } catch (e) {}
-      }
-
+  const mapTracksData = useCallback((rawTracks: any[], currentUserId?: number, userLikes: string[] = []): Track[] => {
+      if (!rawTracks) return [];
       return rawTracks.map((trk: any) => ({
-          id: trk.id, uploaderId: trk.uploader_id, uploaderName: trk.profiles?.username || 'Unknown',
-          uploaderAvatar: trk.profiles?.photo_url, title: trk.title, description: trk.description,
-          genre: trk.genre, coverUrl: trk.cover_url, audioUrl: trk.audio_url, duration: trk.duration,
-          createdAt: trk.created_at, plays: trk.plays || 0, likes: trk.likes_count || 0, 
-          comments: [], 
-          isLikedByCurrentUser: userLikes.includes(trk.id), isVerifiedUploader: (trk.plays || 0) > 1000 
+          id: trk.id, 
+          uploaderId: trk.uploader_id, 
+          uploaderName: trk.profiles?.username || 'Mori Artist',
+          uploaderAvatar: trk.profiles?.photo_url, 
+          title: trk.title, 
+          description: trk.description,
+          genre: trk.genre, 
+          coverUrl: trk.cover_url, 
+          audioUrl: trk.audio_url, 
+          duration: trk.duration || 0,
+          createdAt: trk.created_at, 
+          plays: trk.plays || 0, 
+          likes: trk.likes_count || 0, 
+          comments: [], // Comments loaded only on demand
+          isLikedByCurrentUser: userLikes.includes(trk.id), 
+          isVerifiedUploader: trk.profiles?.is_verified || (trk.plays || 0) > 1000 
       }));
   }, []);
 
@@ -138,12 +140,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const { data: tracksData, error } = await supabase
         .from('tracks')
-        .select('*, profiles:uploader_id(username, photo_url)')
+        .select('*, profiles:uploader_id(username, photo_url, is_verified)')
         .order('created_at', { ascending: false })
-        .limit(40); // Limit initial load for mobile performance
+        .limit(30);
       
       if (error) throw error;
-      const mapped = await mapTracksData(tracksData || [], userId);
+
+      let userLikes: string[] = [];
+      if (userId) {
+        const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
+        if (likes) userLikes = likes.map(l => l.track_id);
+      }
+
+      const mapped = mapTracksData(tracksData || [], userId, userLikes);
       setTracks(mapped);
     } catch (e) {
       console.error("Fetch tracks error:", e);
@@ -172,20 +181,32 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) {}
   }, []);
 
-  // Update tracks with likes info once user is logged in
   const refreshUserContext = useCallback(async (userId: number) => {
     try {
-      const { data: likesData } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
-      const userLikes = likesData?.map(l => l.track_id) || [];
+      const [{ data: likesData }, { data: plData }] = await Promise.all([
+        supabase.from('track_likes').select('track_id').eq('user_id', userId),
+        supabase.from('playlists').select('*').eq('user_id', userId)
+      ]);
       
+      const userLikes = likesData?.map(l => l.track_id) || [];
       setTracks(prev => prev.map(trk => ({
         ...trk,
         isLikedByCurrentUser: userLikes.includes(trk.id)
       })));
 
-      // Fetch playlists in background
-      fetchUserPlaylists(userId);
-      fetchSavedPlaylists(userId);
+      if (plData) {
+          setMyPlaylists(plData.map(p => ({
+            id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
+          })));
+      }
+      
+      // Secondary fetch for saved playlists
+      const { data: savedData } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', userId);
+      if (savedData) {
+          setSavedPlaylists(savedData.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({
+            id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
+          })));
+      }
     } catch (e) {}
   }, []);
 
@@ -197,20 +218,35 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (data.coverFile) {
         coverUrl = await uploadImage(data.coverFile, 'music', `room_covers/${currentUser.id}/${Date.now()}`);
       }
-      const { data: inserted, error } = await supabase.from('rooms').insert({
-        title: data.title, dj_id: currentUser.id, cover_url: coverUrl, status: 'live', track_id: data.trackId
-      }).select('*, profiles:dj_id(username, photo_url)').single();
+      
+      const insertData: any = {
+        title: data.title, 
+        dj_id: currentUser.id, 
+        cover_url: coverUrl || currentUser.photoUrl, 
+        status: 'live'
+      };
+      
+      if (data.trackId) insertData.track_id = data.trackId;
 
-      if (!error && inserted) {
-          await fetchRooms();
-          setActiveRoom({
+      const { data: inserted, error } = await supabase.from('rooms').insert(insertData).select('*, profiles:dj_id(username, photo_url)').single();
+
+      if (error) throw error;
+
+      if (inserted) {
+          const newRoom: Room = {
               id: inserted.id, title: inserted.title, djId: inserted.dj_id,
               djName: inserted.profiles?.username || 'DJ',
               djAvatar: inserted.profiles?.photo_url || '',
               coverUrl: inserted.cover_url, startTime: inserted.created_at,
               status: inserted.status, listeners: 1, isMicActive: false
-          });
+          };
+          setRooms(prev => [newRoom, ...prev]);
+          setActiveRoom(newRoom);
       }
+    } catch (err: any) {
+        console.error("Room creation error", err);
+        const tg = (window as any).Telegram?.WebApp;
+        tg?.showAlert(`Creation failed: ${err.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -220,14 +256,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const dbPayload: any = {};
       if (updates.isMicActive !== undefined) dbPayload.is_mic_active = updates.isMicActive;
       if (updates.currentTrack !== undefined) dbPayload.track_id = updates.currentTrack?.id;
-      await supabase.from('rooms').update(dbPayload).eq('id', roomId);
-      if (activeRoom?.id === roomId) setActiveRoom({ ...activeRoom, ...updates });
+      
+      try {
+        await supabase.from('rooms').update(dbPayload).eq('id', roomId);
+        if (activeRoom?.id === roomId) setActiveRoom({ ...activeRoom, ...updates });
+      } catch (e) {}
   };
 
   const deleteRoom = async (roomId: string) => {
-    await supabase.from('rooms').delete().eq('id', roomId);
-    if (activeRoom?.id === roomId) setActiveRoom(null);
-    await fetchRooms();
+    try {
+      await supabase.from('rooms').delete().eq('id', roomId);
+      if (activeRoom?.id === roomId) setActiveRoom(null);
+      await fetchRooms();
+    } catch (e) {}
   };
 
   const sendRoomMessage = async (roomId: string, message: Partial<RoomMessage>) => {
@@ -248,8 +289,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const updateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return;
-    await supabase.from('profiles').upsert({ id: currentUser.id, ...updates });
-    setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+    try {
+        const dbPayload: any = { ...updates };
+        // Map camelCase to snake_case if necessary
+        if (updates.firstName) dbPayload.first_name = updates.firstName;
+        if (updates.lastName) dbPayload.last_name = updates.lastName;
+        if (updates.photoUrl) dbPayload.photo_url = updates.photoUrl;
+        if (updates.headerUrl) dbPayload.header_url = updates.headerUrl;
+
+        await supabase.from('profiles').upsert({ id: currentUser.id, ...dbPayload });
+        setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+    } catch (e) {}
   };
 
   const fetchUserById = async (userId: number): Promise<User | null> => {
@@ -266,8 +316,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const recordListen = async (trackId: string) => {
     if (!currentUser) return;
-    const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
-    if (trackData) await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
+    try {
+        const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+        if (trackData) await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
+        await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
+    } catch (e) {}
   };
 
   const uploadTrack = async (data: UploadTrackData) => {
@@ -313,7 +366,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const mapped = (data || []).map((p: any) => ({
       id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
     }));
-    if (userId === currentUser?.id || !currentUser) setMyPlaylists(mapped);
     return mapped;
   };
 
@@ -322,14 +374,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const mapped = data?.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({
       id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
     })) || [];
-    if (userId === currentUser?.id || !currentUser) setSavedPlaylists(mapped);
     return mapped;
   };
 
   const createPlaylist = async (title: string) => {
     if (!currentUser) return;
     await supabase.from('playlists').insert({ user_id: currentUser.id, title });
-    await fetchUserPlaylists(currentUser.id);
   };
 
   const addToPlaylist = async (trackId: string, playlistId: string) => {
@@ -341,7 +391,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const isSaved = savedPlaylists.some(p => p.id === playlistId);
     if (isSaved) await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', playlistId);
     else await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: playlistId });
-    await fetchSavedPlaylists(currentUser.id);
   };
 
   const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> => {
@@ -366,9 +415,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const currentTrack = tracks.find(trk => trk.id === trackId);
     if (!currentTrack) return;
     const isLiked = currentTrack.isLikedByCurrentUser;
+    
+    // Optimistic UI
+    setTracks(prev => prev.map(trk => trk.id === trackId ? { 
+        ...trk, 
+        isLikedByCurrentUser: !isLiked, 
+        likes: isLiked ? Math.max(0, trk.likes - 1) : trk.likes + 1 
+    } : trk));
+
     if (isLiked) await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
     else await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
-    setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, isLikedByCurrentUser: !isLiked, likes: isLiked ? trk.likes - 1 : trk.likes + 1 } : trk));
   };
 
   const addComment = async (trackId: string, text: string) => {
@@ -400,43 +456,51 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   useEffect(() => {
-    let isMounted = true;
+    if (isLoadedRef.current) return;
+    isLoadedRef.current = true;
     
     const initApp = async () => {
-        // Start essential data fetching immediately
-        const tracksPromise = fetchTracks();
-        const roomsPromise = fetchRooms();
-        
-        // Wait for basic content to be ready
-        await Promise.allSettled([tracksPromise, roomsPromise]);
-        if (isMounted) setIsLoading(false);
-
-        // BACKGROUND: Handle Telegram and User Auth
+        // Parallel fetch for speed
         const tg = (window as any).Telegram?.WebApp;
-        if (tg?.initDataUnsafe?.user) {
-            const tgUser = tg.initDataUnsafe.user;
-            let user = await fetchUserById(tgUser.id);
-            
-            if (!user) {
-                try {
-                    await supabase.from('profiles').insert({
-                        id: tgUser.id, username: tgUser.username || `user_${tgUser.id}`,
-                        first_name: tgUser.first_name, last_name: tgUser.last_name, photo_url: tgUser.photo_url || ''
-                    });
-                    user = await fetchUserById(tgUser.id);
-                } catch(e) {}
-            }
+        const tgUserId = tg?.initDataUnsafe?.user?.id;
+        
+        // Start loading tracks first (essential content)
+        const fetchEssential = fetchTracks(tgUserId);
+        const fetchLiveRooms = fetchRooms();
 
-            if (user && isMounted) {
-                setCurrentUser(user);
-                refreshUserContext(user.id);
-            }
+        // If we have a user, start their profile fetch in parallel
+        let authPromise = Promise.resolve();
+        if (tgUserId) {
+            authPromise = fetchUserById(tgUserId).then(async user => {
+                if (user) {
+                    setCurrentUser(user);
+                    refreshUserContext(user.id);
+                } else {
+                    const tgUser = tg.initDataUnsafe.user;
+                    try {
+                        await supabase.from('profiles').insert({
+                            id: tgUser.id, 
+                            username: tgUser.username || `user_${tgUser.id}`,
+                            first_name: tgUser.first_name, 
+                            last_name: tgUser.last_name, 
+                            photo_url: tgUser.photo_url || ''
+                        });
+                        const newUser = await fetchUserById(tgUser.id);
+                        if (newUser) {
+                            setCurrentUser(newUser);
+                            refreshUserContext(newUser.id);
+                        }
+                    } catch(e) {}
+                }
+            });
         }
+
+        await Promise.allSettled([fetchEssential, fetchLiveRooms, authPromise]);
+        setIsLoading(false);
     };
 
     initApp();
-    return () => { isMounted = false; };
-  }, [fetchTracks, fetchRooms, refreshUserContext]);
+  }, [fetchTracks, fetchRooms, refreshUserContext, fetchUserById]);
 
   return React.createElement(StoreContext.Provider, {
     value: {
