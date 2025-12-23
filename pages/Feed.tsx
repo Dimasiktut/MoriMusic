@@ -33,8 +33,8 @@ const Feed: React.FC<FeedProps> = ({ onPlayTrack, onOpenProfile }) => {
     <div className="p-5 pb-32">
       <header className="flex justify-between items-center mb-10 mt-6">
         <div className="flex items-center gap-3">
-          <h1 className="text-4xl font-black tracking-tighter text-white uppercase italic">MORI</h1>
-          <h1 className="text-4xl font-black tracking-tighter text-sky-400 uppercase">MUSIC</h1>
+          <h1 className="text-2xl font-black tracking-tighter text-white uppercase italic">MORI</h1>
+          <h1 className="text-2xl font-black tracking-tighter text-sky-400 uppercase">MUSIC</h1>
         </div>
 
         <div className="flex bg-zinc-900/50 rounded-2xl p-1 border border-white/5 backdrop-blur-md h-fit">
