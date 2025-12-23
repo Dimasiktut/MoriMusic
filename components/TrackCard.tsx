@@ -2,9 +2,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
 import { 
-  Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, 
+  Heart, MessageCircle, Play, MoreVertical, BadgeCheck, 
   Trash2, Send, Loader2, ListPlus, X, Image as ImageIcon, 
-  Share2, Download, Bookmark, Zap, Star
+  Share2, Download, Bookmark, Zap
 } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
@@ -41,7 +41,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const handleLike = (e: React.MouseEvent) => {
     e.stopPropagation();
     toggleLike(track.id);
-    // Fix: Access Telegram WebApp safely using type casting to any
     if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('light');
   };
 
@@ -49,7 +48,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     e.stopPropagation();
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(`${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} on MoriMusic!`)}`;
-    // Fix: Access Telegram WebApp safely using type casting to any
     if ((window as any).Telegram?.WebApp) {
       (window as any).Telegram.WebApp.openTelegramLink(shareUrl);
     } else {
@@ -70,7 +68,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
       canvas.width = 1080;
       canvas.height = 1080;
 
-      // Helper to load image with CORS
       const loadImage = (url: string): Promise<HTMLImageElement> => {
         return new Promise((resolve, reject) => {
           const img = new Image();
@@ -81,9 +78,10 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
         });
       };
 
-      // 1. Draw Background (Blurred Cover)
       try {
         const coverImg = await loadImage(track.coverUrl);
+        
+        // 1. Draw Background (Blurred Cover)
         ctx.filter = 'blur(50px) brightness(0.4)';
         ctx.drawImage(coverImg, -100, -100, 1280, 1280);
         ctx.filter = 'none';
@@ -137,7 +135,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
         // 6. Mori Logo Branding
         ctx.fillStyle = '#38bdf8';
-        ctx.font = 'black 32px system-ui';
+        ctx.font = '900 32px system-ui';
         ctx.letterSpacing = '10px';
         ctx.fillText('MORIMUSIC', 540, 1000);
 
@@ -182,7 +180,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
            
            <h3 className="text-white font-black text-xl uppercase italic mt-8 tracking-tighter">{t('track_share')}</h3>
            <p className="text-zinc-500 text-xs font-bold uppercase mt-2 text-center max-w-xs leading-relaxed">
-             This visual snippet is ready for your story or chat!
+             Visual snippet is ready for your story or chat!
            </p>
 
            <div className="flex gap-4 mt-10 w-full max-w-sm">
@@ -196,7 +194,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleShare}
                 className="flex-2 py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> Send Snippet
+                <Send size={16} /> Send
               </button>
            </div>
         </div>
@@ -300,7 +298,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
         </div>
       </div>
 
-      {/* Playlist Modal */}
       {isPlaylistModalOpen && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md p-6 flex items-center justify-center animate-in fade-in duration-300">
               <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-w-sm p-6 shadow-2xl">
@@ -320,7 +317,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
           </div>
       )}
 
-      {/* Comments Section */}
       {isCommentsOpen && (
         <div className="mt-4 pt-4 border-t border-white/5 animate-in slide-in-from-top-2 duration-300">
           <form onSubmit={handleAddComment} className="flex gap-2 mb-4">
@@ -355,11 +351,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 </div>
               </div>
             ))}
-            {(!track.comments || track.comments.length === 0) && (
-              <div className="text-center py-4 text-zinc-700 text-[10px] font-bold uppercase italic">
-                {t('track_no_comments')}
-              </div>
-            )}
           </div>
         </div>
       )}
