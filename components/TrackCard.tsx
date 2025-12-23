@@ -59,7 +59,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     };
 
     // Try native share if available (Mobile Telegram/Browsers)
-    if (navigator.canShare && navigator.canShare(shareData)) {
+    if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
       try {
         await navigator.share(shareData);
         return;
@@ -120,7 +120,12 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
         ctx.save();
         ctx.beginPath();
-        ctx.roundRect(x, y, coverSize, coverSize, radius);
+        if (typeof ctx.roundRect === 'function') {
+           ctx.roundRect(x, y, coverSize, coverSize, radius);
+        } else {
+           // Fallback for older browsers
+           ctx.rect(x, y, coverSize, coverSize);
+        }
         ctx.clip();
         ctx.drawImage(coverImg, x, y, coverSize, coverSize);
         ctx.restore();
@@ -190,7 +195,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleShareSnippet}
                 className="py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> {snippetBlob && navigator.canShare ? 'Share File' : 'Share Link'}
+                <Send size={16} /> {snippetBlob && typeof navigator.share === 'function' ? 'Share File' : 'Share Link'}
               </button>
            </div>
            <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">Close Preview</button>
