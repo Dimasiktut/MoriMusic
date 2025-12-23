@@ -51,11 +51,14 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const handleShareSnippet = async () => {
     if (!snippetBlob) return;
     
-    const file = new File([snippetBlob], "snippet.png", { type: "image/png" });
+    const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
+    const shareText = `${t('track_listen_text')} "${track.title}" ${t('track_by')} ${track.uploaderName} on MoriMusic!\n\nListen here: ${deepLink}`;
+    
+    const file = new File([snippetBlob], "mori_music.png", { type: "image/png" });
     const shareData = {
       files: [file],
-      title: 'MoriMusic Snippet',
-      text: `${t('track_listen_text')} ${track.title} on MoriMusic!`,
+      title: 'MoriMusic',
+      text: shareText,
     };
 
     // Try native share if available (Mobile Telegram/Browsers)
@@ -68,9 +71,8 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
       }
     }
 
-    // Fallback to link share
-    const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(`${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} on MoriMusic!`)}`;
+    // Fallback to Telegram share URL
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`;
     if ((window as any).Telegram?.WebApp) {
       (window as any).Telegram.WebApp.openTelegramLink(shareUrl);
     } else {
@@ -103,53 +105,100 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
       try {
         const coverImg = await loadImage(track.coverUrl);
-        ctx.filter = 'blur(60px) brightness(0.5)';
-        ctx.drawImage(coverImg, -150, -150, 1380, 1380);
+        
+        // 1. Layered Background (Deep Blur)
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, 1080, 1080);
+        
+        ctx.filter = 'blur(80px) brightness(0.4)';
+        ctx.drawImage(coverImg, -200, -200, 1480, 1480);
         ctx.filter = 'none';
 
-        const gradient = ctx.createRadialGradient(540, 540, 200, 540, 540, 900);
-        gradient.addColorStop(0, 'rgba(0,0,0,0.1)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0.9)');
+        // 2. Artistic Gradient Overlay
+        const gradient = ctx.createRadialGradient(540, 540, 0, 540, 540, 800);
+        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+        gradient.addColorStop(0.7, 'rgba(0,0,0,0.5)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0.95)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 1080, 1080);
 
-        const coverSize = 640;
+        // 3. Central Cover with Glassmorphism shadow
+        const coverSize = 620;
         const x = (1080 - coverSize) / 2;
-        const y = 160;
+        const y = 140;
         const radius = 100;
+
+        // Shadow/Glow
+        ctx.shadowColor = 'rgba(56, 189, 248, 0.6)';
+        ctx.shadowBlur = 80;
+        ctx.beginPath();
+        ctx.roundRect(x - 5, y - 5, coverSize + 10, coverSize + 10, radius);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+        ctx.fill();
+        ctx.shadowBlur = 0;
 
         ctx.save();
         ctx.beginPath();
         if (typeof ctx.roundRect === 'function') {
            ctx.roundRect(x, y, coverSize, coverSize, radius);
         } else {
-           // Fallback for older browsers
            ctx.rect(x, y, coverSize, coverSize);
         }
         ctx.clip();
         ctx.drawImage(coverImg, x, y, coverSize, coverSize);
         ctx.restore();
 
-        ctx.shadowColor = 'rgba(56, 189, 248, 0.5)';
-        ctx.shadowBlur = 60;
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
-        ctx.lineWidth = 6;
-        ctx.strokeRect(x, y, coverSize, coverSize);
-        ctx.shadowBlur = 0;
+        // White border
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 4;
+        ctx.stroke();
 
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.font = 'italic 900 72px system-ui';
-        ctx.fillText(track.title.toUpperCase(), 540, 880);
-
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = 'bold 38px system-ui';
-        ctx.fillText(track.uploaderName.toUpperCase(), 540, 940);
+        // 4. Equalizer Effect (Stylized bars)
+        const barWidth = 14;
+        const barGap = 10;
+        const barCount = 40;
+        const startX = (1080 - (barCount * (barWidth + barGap))) / 2;
+        const baseY = 800;
 
         ctx.fillStyle = '#38bdf8';
-        ctx.font = '900 32px system-ui';
-        ctx.letterSpacing = '12px';
-        ctx.fillText('MORIMUSIC', 540, 1020);
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 15;
+        
+        for (let i = 0; i < barCount; i++) {
+          const barHeight = 20 + Math.random() * 80;
+          ctx.beginPath();
+          // Draw rounded bars
+          ctx.roundRect(
+            startX + i * (barWidth + barGap), 
+            baseY - barHeight / 2, 
+            barWidth, 
+            barHeight, 
+            barWidth / 2
+          );
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        // 5. Text Information
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        
+        // Title
+        ctx.font = 'italic 900 80px system-ui';
+        ctx.letterSpacing = '-2px';
+        ctx.fillText(track.title.toUpperCase(), 540, 920);
+
+        // Artist
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 40px system-ui';
+        ctx.letterSpacing = '1px';
+        ctx.fillText(track.uploaderName.toUpperCase(), 540, 980);
+
+        // Branding
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = '900 28px system-ui';
+        ctx.letterSpacing = '14px';
+        ctx.fillText('MORIMUSIC', 540, 1050);
 
         canvas.toBlob((blob) => {
           if (blob) {
@@ -157,7 +206,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
             setSnippetUrl(URL.createObjectURL(blob));
             if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
           }
-        }, 'image/png');
+        }, 'image/png', 0.95);
       } catch (err) { console.error("Canvas error", err); }
     } finally { setIsGeneratingSnippet(false); }
   };
@@ -175,13 +224,13 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
       {/* Snippet Modal */}
       {snippetUrl && (
         <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-[0_0_50px_rgba(56,189,248,0.2)] border border-white/10">
+           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-[0_0_80px_rgba(56,189,248,0.25)] border border-white/10">
               <img src={snippetUrl} className="w-full h-full object-cover" alt="Snippet" />
            </div>
            
            <div className="mt-8 text-center">
              <h3 className="text-white font-black text-2xl uppercase italic tracking-tighter">{t('track_share')}</h3>
-             <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60">Ready for Telegram Stories & Chats</p>
+             <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60">Visual snippet with blur & equalizer</p>
            </div>
 
            <div className="grid grid-cols-2 gap-4 mt-10 w-full max-w-sm">
@@ -195,7 +244,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleShareSnippet}
                 className="py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> {snippetBlob && typeof navigator.share === 'function' ? 'Share File' : 'Share Link'}
+                <Send size={16} /> Share
               </button>
            </div>
            <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">Close Preview</button>
