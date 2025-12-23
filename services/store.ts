@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
@@ -397,7 +397,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const getChartTracks = async (period: 'week' | 'month'): Promise<Track[]> => {
+  const getChartTracks = async (_period: 'week' | 'month'): Promise<Track[]> => {
     const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
     return mapTracksData(data || [], currentUser?.id);
   };

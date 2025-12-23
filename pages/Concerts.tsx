@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Room, RoomMessage, Track } from '../types';
+import { Room, RoomMessage } from '../types';
 import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
