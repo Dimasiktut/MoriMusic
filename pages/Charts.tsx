@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Track } from '../types';
@@ -25,62 +26,62 @@ const Charts: React.FC<ChartsProps> = ({ onPlayTrack }) => {
   }, [chartType, getChartTracks]);
 
   return (
-    <div className="p-4 pb-32">
-      <h1 className="text-2xl font-bold text-white mb-6 mt-2">{t('charts_title')}</h1>
+    <div className="p-5 pb-32">
+      <h1 className="text-3xl font-black text-white mb-6 mt-4 uppercase italic tracking-tighter">{t('charts_title')}</h1>
 
       {/* Tabs */}
-      <div className="flex border-b border-zinc-800 mb-6">
+      <div className="flex border-b border-white/5 mb-8">
         <button
           onClick={() => setChartType('week')}
-          className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${chartType === 'week' ? 'text-violet-400' : 'text-zinc-500'}`}
+          className={`flex-1 pb-4 text-xs font-black uppercase tracking-widest transition-colors relative ${chartType === 'week' ? 'text-sky-400' : 'text-zinc-600'}`}
         >
           {t('charts_week')}
-          {chartType === 'week' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
+          {chartType === 'week' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
         </button>
         <button
           onClick={() => setChartType('month')}
-          className={`flex-1 pb-3 text-sm font-medium transition-colors relative ${chartType === 'month' ? 'text-violet-400' : 'text-zinc-500'}`}
+          className={`flex-1 pb-4 text-xs font-black uppercase tracking-widest transition-colors relative ${chartType === 'month' ? 'text-sky-400' : 'text-zinc-600'}`}
         >
           {t('charts_month')}
-          {chartType === 'month' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-violet-500 rounded-t-full" />}
+          {chartType === 'month' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
         </button>
       </div>
 
       {/* Ranking List */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {loading ? (
-            <div className="flex justify-center py-12">
-                <Loader2 className="animate-spin text-violet-500" size={32} />
+            <div className="flex justify-center py-20">
+                <Loader2 className="animate-spin text-sky-400" size={32} />
             </div>
         ) : chartTracks.length === 0 ? (
-            <div className="text-center text-zinc-500 py-10">
+            <div className="text-center text-zinc-600 py-10 font-bold uppercase text-xs">
                 {t('charts_empty')}
             </div>
         ) : (
             chartTracks.map((track, index) => (
             <div 
                 key={track.id} 
-                className="flex items-center gap-4 bg-zinc-900/50 p-3 rounded-xl active:bg-zinc-800 transition-colors cursor-pointer border border-transparent hover:border-white/5"
+                className="flex items-center gap-4 bg-zinc-900/40 p-4 rounded-3xl active:bg-zinc-800 transition-all cursor-pointer border border-white/5 hover:border-sky-500/30 group"
                 onClick={() => onPlayTrack(track)}
             >
-                <div className={`w-6 text-center font-bold text-lg ${index < 3 ? 'text-yellow-500' : 'text-zinc-600'}`}>
+                <div className={`w-8 text-center font-black text-xl italic ${index < 3 ? 'text-sky-400' : 'text-zinc-700'}`}>
                 {index + 1}
                 </div>
                 
-                <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-zinc-800 flex-shrink-0">
-                <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" />
+                <div className="relative w-14 h-14 rounded-2xl overflow-hidden bg-zinc-800 flex-shrink-0 shadow-lg">
+                    <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
 
                 <div className="flex-1 min-w-0">
-                <h4 className="text-white font-medium truncate">{track.title}</h4>
-                <p className="text-zinc-500 text-xs truncate">
-                    {track.uploaderName} • {track.plays.toLocaleString()} {t('track_plays')}
-                </p>
+                    <h4 className="text-white font-black truncate uppercase italic tracking-tight">{track.title}</h4>
+                    <p className="text-zinc-500 text-xs font-bold truncate mt-0.5">
+                        {track.uploaderName} • {track.plays.toLocaleString()}
+                    </p>
                 </div>
 
-                <button className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20">
-                <Play size={14} fill="currentColor" className="ml-0.5" />
-                </button>
+                <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-sky-400 group-hover:bg-sky-400 group-hover:text-black transition-all">
+                    <Play size={18} fill="currentColor" className="ml-0.5" />
+                </div>
             </div>
             ))
         )}

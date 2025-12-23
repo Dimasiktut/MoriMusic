@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
 import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link, BadgeCheck, ListMusic, Download } from './ui/Icons';
@@ -15,9 +16,8 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   
-  // Menu States
   const [showMenu, setShowMenu] = useState(false);
-  const [viewPlaylistMenu, setViewPlaylistMenu] = useState(false); // Submenu for playlists
+  const [viewPlaylistMenu, setViewPlaylistMenu] = useState(false);
 
   const [isCopied, setIsCopied] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
@@ -50,174 +50,86 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     setCommentText('');
   };
 
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (confirm(t('track_delete_confirm'))) {
-        await deleteTrack(track.id);
-    }
-    setShowMenu(false);
-  };
-  
-  const handleDownload = async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      setIsDownloading(true);
-      await downloadTrack(track);
-      setIsDownloading(false);
-      setShowMenu(false);
-  };
-
-  const handleAddToPlaylist = async (e: React.MouseEvent, playlistId: string) => {
-      e.stopPropagation();
-      await addToPlaylist(track.id, playlistId);
-      alert(t('track_added_playlist'));
-      setShowMenu(false);
-      setViewPlaylistMenu(false);
-  };
-
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
-    const shareText = `${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} — MoriMusic 🎧`;
+    const shareText = `${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} — MORI MUSIC 🎧`;
     
     // @ts-ignore
     const tg = window.Telegram?.WebApp;
-    const isTelegram = (tg && (tg.initData || tg.platform !== 'unknown'));
-
-    const copyToClipboard = () => {
+    if (tg?.initData && typeof tg.openTelegramLink === 'function') {
+         tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`);
+    } else {
         navigator.clipboard.writeText(deepLink).then(() => {
             setIsCopied(true);
             setTimeout(() => setIsCopied(false), 2000);
-        }).catch(console.error);
-    };
-
-    if (isTelegram && typeof tg.openTelegramLink === 'function') {
-         tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(shareText)}`);
-    } else if (navigator.share) {
-        navigator.share({ title: 'MoriMusic', text: shareText, url: deepLink }).catch(() => copyToClipboard());
-    } else {
-        copyToClipboard();
+        });
     }
-    setShowMenu(false);
   };
 
   const isOwner = currentUser?.id === track.uploaderId;
 
   return (
-    <div className="bg-zinc-900 border border-white/5 rounded-2xl p-4 mb-4 shadow-sm hover:bg-zinc-800/50 transition-colors relative">
-      <div className="flex gap-4">
-        <div className="relative w-20 h-20 rounded-xl overflow-hidden bg-zinc-800 flex-shrink-0 group cursor-pointer" onClick={() => onPlay(track)}>
-          <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <div className="w-8 h-8 bg-white/90 rounded-full flex items-center justify-center shadow-lg">
-                <Play size={14} className="text-black ml-0.5" fill="currentColor"/>
+    <div className="bg-zinc-900/40 border border-white/5 rounded-[2rem] p-5 shadow-sm hover:border-sky-500/30 transition-all group relative">
+      <div className="flex gap-5">
+        <div className="relative w-24 h-24 rounded-3xl overflow-hidden bg-zinc-800 flex-shrink-0 cursor-pointer shadow-2xl" onClick={() => onPlay(track)}>
+          <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover transition-transform group-hover:scale-110 duration-500" />
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transform group-hover:scale-110 transition-transform">
+                <Play size={20} className="text-black ml-1" fill="currentColor"/>
             </div>
           </div>
         </div>
 
-        <div className="flex-1 min-w-0 flex flex-col justify-center relative">
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
             <div className="flex justify-between items-start">
-                <div className="min-w-0 flex-1 mr-6">
-                    <h3 className="text-white font-bold truncate leading-tight mb-1">{track.title}</h3>
-                    <div className="flex items-center gap-1 text-zinc-400 text-sm cursor-pointer hover:text-violet-400 transition-colors"
+                <div className="min-w-0 flex-1">
+                    <h3 className="text-white text-lg font-black truncate tracking-tight mb-0.5 uppercase italic">{track.title}</h3>
+                    <div className="flex items-center gap-1.5 text-zinc-400 text-sm font-medium cursor-pointer hover:text-sky-400 transition-colors"
                         onClick={(e) => { e.stopPropagation(); onOpenProfile && onOpenProfile(track.uploaderId); }}>
                         <span className="truncate">{track.uploaderName}</span>
-                        {track.isVerifiedUploader && <BadgeCheck size={14} className="text-violet-500 fill-violet-500/10" />}
+                        {track.isVerifiedUploader && <BadgeCheck size={16} className="text-sky-400" />}
                     </div>
                 </div>
                 
-                {/* Menu Button */}
-                <div className="absolute top-0 right-0" ref={menuRef}>
-                    <button className="text-zinc-500 p-1 hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); setViewPlaylistMenu(false); }}>
-                        <MoreVertical size={16} />
+                <div className="relative" ref={menuRef}>
+                    <button className="text-zinc-600 p-2 hover:text-white transition-colors" onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}>
+                        <MoreVertical size={20} />
                     </button>
-                    
                     {showMenu && (
-                        <div className="absolute right-0 top-6 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 z-10 w-44 animate-in fade-in zoom-in-95 duration-100">
-                             {!viewPlaylistMenu ? (
-                                 <>
-                                     <button onClick={handleShare} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
-                                        {isCopied ? <Check size={12} className="text-green-500"/> : <Link size={12} />}
-                                        {isCopied ? t('track_copied') : t('track_share')}
-                                     </button>
-                                     <button onClick={handleDownload} disabled={isDownloading} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50">
-                                        <Download size={12} /> {isDownloading ? t('track_downloading') : t('track_download')}
-                                     </button>
-                                     <button onClick={(e) => { e.stopPropagation(); setViewPlaylistMenu(true); }} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 flex items-center gap-2">
-                                        <ListMusic size={12} /> {t('track_add_playlist')}
-                                     </button>
-                                     {isOwner && (
-                                        <button onClick={handleDelete} className="w-full text-left px-3 py-2 text-xs text-red-400 hover:bg-zinc-700 flex items-center gap-2">
-                                            <Trash2 size={12} /> {t('track_delete')}
-                                        </button>
-                                     )}
-                                 </>
-                             ) : (
-                                 <>
-                                     <button onClick={(e) => { e.stopPropagation(); setViewPlaylistMenu(false); }} className="w-full text-left px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-700 border-b border-zinc-700 mb-1">
-                                         &larr; Back
-                                     </button>
-                                     <div className="max-h-32 overflow-y-auto custom-scrollbar">
-                                         {myPlaylists.length > 0 ? (
-                                             myPlaylists.map(p => (
-                                                 <button key={p.id} onClick={(e) => handleAddToPlaylist(e, p.id)} className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 truncate">
-                                                     {p.title}
-                                                 </button>
-                                             ))
-                                         ) : (
-                                             <div className="px-3 py-2 text-xs text-zinc-500 italic">No playlists</div>
-                                         )}
-                                     </div>
-                                 </>
+                        <div className="absolute right-0 top-10 bg-black border border-white/10 rounded-2xl shadow-2xl py-2 z-20 w-48 overflow-hidden backdrop-blur-xl">
+                             <button onClick={handleShare} className="w-full text-left px-4 py-3 text-xs font-bold text-white hover:bg-sky-500 hover:text-black flex items-center gap-3 transition-colors">
+                                <Link size={16} /> {isCopied ? t('track_copied') : t('track_share')}
+                             </button>
+                             {isOwner && (
+                                <button onClick={(e) => { e.stopPropagation(); deleteTrack(track.id); }} className="w-full text-left px-4 py-3 text-xs font-bold text-red-500 hover:bg-red-500 hover:text-white flex items-center gap-3 transition-colors">
+                                    <Trash2 size={16} /> {t('track_delete')}
+                                </button>
                              )}
                         </div>
                     )}
                 </div>
             </div>
             
-            <div className="flex items-center gap-2 mt-2">
-               <span className="text-xs px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">{track.genre}</span>
-               <span className="text-xs text-zinc-600">{new Date(track.createdAt).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}</span>
+            <div className="flex items-center gap-3 mt-3">
+               <span className="text-[10px] font-black uppercase px-2.5 py-1 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20">{track.genre}</span>
+               <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">{new Date(track.createdAt).toLocaleDateString(language === 'ru' ? 'ru-RU' : 'en-US')}</span>
             </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-4 pt-3 border-t border-white/5">
-        <div className="flex items-center gap-6">
-            <button onClick={handleLike} className={`flex items-center gap-1.5 text-sm transition-colors ${track.isLikedByCurrentUser ? 'text-red-500' : 'text-zinc-400 hover:text-white'}`}>
-                <div className={isLiking ? 'animate-like' : ''}><Heart size={18} fill={track.isLikedByCurrentUser ? "currentColor" : "none"} /></div>
+      <div className="flex items-center justify-between mt-5 pt-4 border-t border-white/5">
+        <div className="flex items-center gap-8">
+            <button onClick={handleLike} className={`flex items-center gap-2 text-sm font-bold transition-all ${track.isLikedByCurrentUser ? 'text-sky-400' : 'text-zinc-500 hover:text-white'}`}>
+                <Heart size={20} fill={track.isLikedByCurrentUser ? "currentColor" : "none"} className={isLiking ? 'scale-125' : ''}/>
                 <span>{track.likes}</span>
             </button>
-            <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-white transition-colors">
-                <MessageCircle size={18} /><span>{track.comments?.length || 0}</span>
-            </button>
-             <button onClick={handleShare} className={`text-zinc-400 hover:text-white transition-colors ${isCopied ? 'text-green-500' : ''}`}>
-                {isCopied ? <Check size={18} /> : <Share2 size={18} />}
+            <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-white transition-colors">
+                <MessageCircle size={20} /><span>{track.comments?.length || 0}</span>
             </button>
         </div>
-        <div className="text-xs text-zinc-500">{track.plays.toLocaleString()} {t('track_plays')}</div>
+        <div className="text-[10px] font-black uppercase text-zinc-600 tracking-tighter">{track.plays.toLocaleString()} {t('track_plays')}</div>
       </div>
-
-      {showComments && (
-        <div className="mt-4 pt-3 border-t border-white/5 animate-in fade-in slide-in-from-top-2">
-            <div className="space-y-3 max-h-40 overflow-y-auto mb-3 custom-scrollbar">
-                {(!track.comments || track.comments.length === 0) ? (
-                    <p className="text-center text-xs text-zinc-600 italic">{t('track_no_comments')}</p>
-                ) : (
-                    track.comments.map(c => (
-                        <div key={c.id} className="flex gap-2 text-xs">
-                             <div className="font-bold text-zinc-300">{c.username}</div>
-                             <div className="text-zinc-400">{c.text}</div>
-                        </div>
-                    ))
-                )}
-            </div>
-            <form onSubmit={handleCommentSubmit} className="flex gap-2">
-                <input type="text" value={commentText} onChange={(e) => setCommentText(e.target.value)} placeholder={t('track_comment_placeholder')}
-                    className="flex-1 bg-zinc-800 border-none rounded-lg px-3 py-2 text-sm text-white focus:ring-1 focus:ring-violet-500 outline-none"/>
-                <button type="submit" disabled={!commentText.trim()} className="text-violet-500 font-medium text-sm px-2 disabled:opacity-50">{t('track_comment_post')}</button>
-            </form>
-        </div>
-      )}
     </div>
   );
 };

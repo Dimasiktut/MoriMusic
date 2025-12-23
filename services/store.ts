@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Track, User, Comment, Playlist, Concert } from '../types';
 import { INITIAL_USER, TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
 import { supabase } from './supabase';
+import { GoogleGenAI } from "@google/genai";
 
 interface UploadTrackData {
   title: string;
@@ -27,6 +28,7 @@ interface StoreContextType {
   t: (key: keyof typeof TRANSLATIONS['en']) => string;
   uploadTrack: (data: UploadTrackData) => Promise<void>;
   uploadAlbum: (files: File[], commonData: { title: string, description: string, genre: string, coverFile: File | null }) => Promise<void>;
+  generateTrackDescription: (title: string, genre: string) => Promise<string>;
   createPlaylist: (title: string) => Promise<void>;
   addToPlaylist: (trackId: string, playlistId: string) => Promise<void>;
   fetchUserPlaylists: (userId: number) => Promise<Playlist[]>;
@@ -71,7 +73,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return TRANSLATIONS[language][key] || key;
   }, [language]);
 
-  // --- BADGE CALCULATION LOGIC ---
   const calculateBadges = (stats: { uploads: number, likesReceived: number, totalPlays: number }, isVerified?: boolean) => {
       const badges: string[] = [];
       if (isVerified) badges.push('verified');
@@ -81,9 +82,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return badges;
   };
 
-  // Helper to calculate stats from DB
   const getUserStats = useCallback(async (userId: number) => {
-      // 1. Get user's tracks to count uploads and sum plays
       const { data: userTracks, error } = await supabase
         .from('tracks')
         .select('id, plays')
@@ -95,7 +94,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const totalPlays = userTracks.reduce((sum, t) => sum + t.plays, 0);
       const trackIds = userTracks.map(t => t.id);
 
-      // 2. Count likes received on these tracks
       let likesReceived = 0;
       if (trackIds.length > 0) {
         const { count } = await supabase
@@ -108,7 +106,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return { uploads, totalPlays, likesReceived };
   }, []);
 
-  // Helper to map DB track to UI Track
   const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
 
@@ -188,7 +185,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, [mapTracksData]);
 
-  // --- MOCK CONCERTS DATA ---
   const fetchConcerts = useCallback(async () => {
     const mockConcerts: Concert[] = [
         {
@@ -220,7 +216,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setConcerts(mockConcerts);
   }, []);
 
-  // --- DONATION LOGIC (Stars) ---
+  const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
+      try {
+          // Use process.env.API_KEY which is provided in the environment
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+          const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
+          
+          const response = await ai.models.generateContent({
+              model: "gemini-3-flash-preview",
+              contents: prompt
+          });
+          
+          return response.text || "";
+      } catch (e) {
+          console.error("AI Generation failed:", e);
+          return "";
+      }
+  }, [language]);
+
   const donateToConcert = useCallback(async (concertId: string, amount: number): Promise<boolean> => {
       console.log(`Processing donation of ${amount} stars for concert ${concertId}`);
       return new Promise((resolve) => {
@@ -288,7 +301,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await supabase.from('playlist_items').insert({ playlist_id: playlistId, track_id: trackId });
   }, [currentUser]);
 
-  // --- INIT APP LOGIC ---
   useEffect(() => {
     const initApp = async () => {
       try {
@@ -304,7 +316,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           
           let { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
           
-          // Try to create profile if not exists
           if (!profile) {
               const newProfile = {
                   id: userId,
@@ -326,7 +337,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           }
 
           if (profile) {
-            // REAL STATS CALCULATION
             const stats = await getUserStats(profile.id);
             
             setCurrentUser({
@@ -385,8 +395,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const checkGroupMembership = useCallback(async (userId: number): Promise<boolean> => { 
-      // If we don't have tokens, fail safe (block upload) or allow (dev mode). 
-      // For a "subscription required" feature, we block.
       if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
           console.error("Telegram Bot Token or Chat ID is missing in constants.ts");
           return false;
@@ -395,36 +403,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.log(`Checking membership for ${userId} in ${TELEGRAM_CHAT_ID}...`);
 
       try {
-          // Add timestamp and NO-CACHE header to ensure we get real status every time
           const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getChatMember?chat_id=${TELEGRAM_CHAT_ID}&user_id=${userId}&_=${Date.now()}`;
-          
-          const response = await fetch(url, { cache: 'no-store' }); // FORCE NO CACHE
+          const response = await fetch(url, { cache: 'no-store' }); 
           const data = await response.json();
 
           if (!data.ok) {
               console.error("Telegram API Error:", data.description);
-              // If user is not found or chat not found, they are definitely not a member.
               return false;
           }
 
           const status = data.result?.status;
-          console.log("User status:", status);
-
-          // Allowed statuses: creator, administrator, member
-          // 'restricted' might be allowed if they are still a member (is_member=true)
           const validStatuses = ['creator', 'administrator', 'member'];
-          
           if (validStatuses.includes(status)) return true;
-          
-          // Check for restricted but still member (e.g. muted)
           if (status === 'restricted' && data.result.is_member) return true;
 
-          return false; // left, kicked, or unknown
-
+          return false;
       } catch (e) {
           console.error("Membership check failed (Network/CORS):", e);
-          // NOTE: If this fails due to CORS in production, you MUST use a backend proxy.
-          // For now, we return false to enforce security as requested.
           return false; 
       }
   }, []);
@@ -432,7 +427,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const uploadTrack = useCallback(async (data: UploadTrackData) => {
     if (!currentUser) return;
     
-    // Always check membership fresh
     const isMember = await checkGroupMembership(currentUser.id);
     if (!isMember) {
         alert(t('upload_sub_required'));
@@ -441,11 +435,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setIsLoading(true);
     try {
-        // ROBUST CHECK: Ensure user exists in DB before inserting track
         const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
         if (!existingProfile) {
-            console.log("Profile missing in DB, attempting create...", currentUser.id);
-            const { error: insertErr } = await supabase.from('profiles').insert({
+            await supabase.from('profiles').insert({
                 id: currentUser.id,
                 username: currentUser.username,
                 first_name: currentUser.firstName,
@@ -454,10 +446,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 bio: currentUser.bio || '',
                 links: currentUser.links || {}
             });
-            if (insertErr) {
-                console.error("FATAL: Could not create user profile before track upload", insertErr);
-                throw new Error("Could not register user. Please restart the app.");
-            }
         }
 
         let audioUrl = data.existingAudioUrl || '';
@@ -478,7 +466,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await fetchTracks(currentUser.id);
     } catch (e) {
         console.error("Upload failed", e);
-        alert("Upload failed. If you are new, try restarting the app.");
+        alert("Upload failed.");
     } finally { 
         setIsLoading(false); 
     }
@@ -487,7 +475,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const uploadAlbum = useCallback(async (files: File[], commonData: any) => {
     if (!currentUser) return;
 
-    // ADDED: Membership check for albums too
     const isMember = await checkGroupMembership(currentUser.id);
     if (!isMember) {
         alert(t('upload_sub_required'));
@@ -496,7 +483,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setIsLoading(true);
     try {
-        // Ensure profile exists for album too
         const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', currentUser.id).maybeSingle();
         if (!existingProfile) {
             await supabase.from('profiles').insert({
@@ -552,14 +538,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const toggleLike = useCallback(async (trackId: string) => { 
       if (!currentUser) return;
-      // Optimistic
       setTracks(prev => prev.map(t => {
           if (t.id === trackId) {
              return { ...t, likes: t.isLikedByCurrentUser ? t.likes - 1 : t.likes + 1, isLikedByCurrentUser: !t.isLikedByCurrentUser };
           }
           return t;
       }));
-      // DB
       const { data } = await supabase.from('track_likes').select('*').eq('user_id', currentUser.id).eq('track_id', trackId).maybeSingle();
       if (data) {
           await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
@@ -614,9 +598,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => { 
       const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
       if (data) {
-          // Calculate stats for this user
           const stats = await getUserStats(data.id);
-          
           return {
               id: data.id,
               username: data.username,
@@ -634,7 +616,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [getUserStats]);
 
   const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => { 
-      console.log(`Getting charts for ${period}`);
       const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
       return mapTracksData(data || [], currentUser?.id);
   }, [currentUser, mapTracksData]);
@@ -662,7 +643,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         currentUser, tracks, myPlaylists, savedPlaylists, concerts, isLoading, language, setLanguage, t,
         uploadTrack, uploadAlbum, createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists, toggleSavePlaylist,
         fetchPlaylistTracks, deleteTrack, downloadTrack, toggleLike, addComment, recordListen, updateProfile, uploadImage,
-        fetchUserById, getChartTracks, getLikedTracks, getUserHistory, donateToConcert
+        fetchUserById, getChartTracks, getLikedTracks, getUserHistory, donateToConcert, generateTrackDescription
       }
     },
     children
