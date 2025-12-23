@@ -57,8 +57,8 @@ interface StoreContextType {
   createRoom: (data: CreateRoomData) => Promise<void>;
   deleteRoom: (roomId: string) => Promise<void>;
   fetchRooms: () => Promise<void>;
-  sendRoomMessage: (roomId: string, text: string) => Promise<void>;
-  // Fix: Added missing donateToRoom to StoreContextType interface
+  sendRoomMessage: (roomId: string, message: Partial<RoomMessage>) => Promise<void>;
+  // Fix: Added missing donateToRoom property to interface to align with StoreProvider implementation
   donateToRoom: () => Promise<boolean>;
 }
 
@@ -93,7 +93,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return TRANSLATIONS[language][key] || key;
   }, [language]);
 
-  // Fix: Implemented generateTrackDescription using Gemini API
   const generateTrackDescription = async (title: string, genre: string) => {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -160,7 +159,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         coverUrl: r.cover_url,
         startTime: r.created_at,
         status: r.status,
-        listeners: Math.floor(Math.random() * 50), // Simulation
+        listeners: Math.floor(Math.random() * 50) + 1, 
         currentTrack: r.tracks ? {
           id: r.tracks.id,
           title: r.tracks.title,
@@ -202,8 +201,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     await fetchRooms();
   };
 
-  const sendRoomMessage = async (roomId: string, text: string) => {
-    console.log(`Sending to ${roomId}: ${text}`);
+  const sendRoomMessage = async (roomId: string, message: Partial<RoomMessage>) => {
+    const channel = supabase.channel(`room:${roomId}`);
+    await channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.send({
+          type: 'broadcast',
+          event: 'message',
+          payload: message,
+        });
+      }
+    });
   };
 
   const uploadImage = async (file: File, bucket: string, path: string): Promise<string> => {
@@ -236,13 +244,191 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const uploadTrack = async (data: UploadTrackData) => {
+    if (!currentUser) return;
+    setIsLoading(true);
+    try {
+      let audioUrl = data.existingAudioUrl || '';
+      let coverUrl = data.existingCoverUrl || '';
+      if (data.audioFile) {
+        audioUrl = await uploadImage(data.audioFile, 'music', `tracks/${currentUser.id}/${Date.now()}_${data.audioFile.name}`);
+      }
+      if (data.coverFile) {
+        coverUrl = await uploadImage(data.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_${data.coverFile.name}`);
+      }
+      await supabase.from('tracks').insert({
+        uploader_id: currentUser.id,
+        title: data.title,
+        description: data.description,
+        genre: data.genre,
+        audio_url: audioUrl,
+        cover_url: coverUrl,
+        duration: data.duration
+      });
+      await fetchTracks(currentUser.id);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const uploadAlbum = async (files: File[], commonData: { title: string, description: string, genre: string, coverFile: File | null }) => {
+    if (!currentUser) return;
+    setIsLoading(true);
+    try {
+      let coverUrl = '';
+      if (commonData.coverFile) {
+        coverUrl = await uploadImage(commonData.coverFile, 'music', `covers/${currentUser.id}/${Date.now()}_album`);
+      }
+      for (const file of files) {
+        const audioUrl = await uploadImage(file, 'music', `tracks/${currentUser.id}/${Date.now()}_${file.name}`);
+        await supabase.from('tracks').insert({
+          uploader_id: currentUser.id,
+          title: file.name.replace(/\.[^/.]+$/, ""),
+          description: commonData.description,
+          genre: commonData.genre,
+          audio_url: audioUrl,
+          cover_url: coverUrl,
+          duration: 180
+        });
+      }
+      await fetchTracks(currentUser.id);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchUserPlaylists = async (userId: number): Promise<Playlist[]> => {
+    const { data } = await supabase.from('playlists').select('*').eq('user_id', userId);
+    const mapped = (data || []).map((p: any) => ({
+      id: p.id,
+      userId: p.user_id,
+      title: p.title,
+      coverUrl: p.cover_url,
+      createdAt: p.created_at
+    }));
+    if (userId === currentUser?.id) setMyPlaylists(mapped);
+    return mapped;
+  };
+
+  const fetchSavedPlaylists = async (userId: number): Promise<Playlist[]> => {
+    const { data } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', userId);
+    const mapped = data?.map((d: any) => {
+        const p = d.playlists;
+        if (!p) return null;
+        return {
+            id: p.id,
+            userId: p.user_id,
+            title: p.title,
+            coverUrl: p.cover_url,
+            createdAt: p.created_at
+        };
+    }).filter(Boolean) as Playlist[] || [];
+    if (userId === currentUser?.id) setSavedPlaylists(mapped);
+    return mapped;
+  };
+
+  const createPlaylist = async (title: string) => {
+    if (!currentUser) return;
+    await supabase.from('playlists').insert({ user_id: currentUser.id, title });
+    await fetchUserPlaylists(currentUser.id);
+  };
+
+  const addToPlaylist = async (trackId: string, playlistId: string) => {
+    await supabase.from('playlist_items').insert({ playlist_id: playlistId, track_id: trackId });
+  };
+
+  const toggleSavePlaylist = async (playlistId: string) => {
+    if (!currentUser) return;
+    const isSaved = savedPlaylists.some(p => p.id === playlistId);
+    if (isSaved) {
+        await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', playlistId);
+    } else {
+        await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: playlistId });
+    }
+    await fetchSavedPlaylists(currentUser.id);
+  };
+
+  const fetchPlaylistTracks = async (playlistId: string): Promise<Track[]> => {
+    const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url))').eq('playlist_id', playlistId);
+    const raw = data?.map((d: any) => d.tracks).filter(Boolean) || [];
+    return mapTracksData(raw, currentUser?.id);
+  };
+
+  const deleteTrack = async (trackId: string) => {
+    await supabase.from('tracks').delete().eq('id', trackId);
+    setTracks(prev => prev.filter(trk => trk.id !== trackId));
+  };
+
+  const downloadTrack = async (track: Track) => {
+    const a = document.createElement('a');
+    a.href = track.audioUrl;
+    a.download = `${track.title}.mp3`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const toggleLike = async (trackId: string) => {
+    if (!currentUser) return;
+    const currentTrack = tracks.find(trk => trk.id === trackId);
+    if (!currentTrack) return;
+    const isLiked = currentTrack.isLikedByCurrentUser;
+    if (isLiked) {
+        await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+    } else {
+        await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+    }
+    setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, isLikedByCurrentUser: !isLiked, likes: isLiked ? trk.likes - 1 : trk.likes + 1 } : trk));
+  };
+
+  const addComment = async (trackId: string, text: string) => {
+    if (!currentUser) return;
+    const { data, error } = await supabase.from('comments').insert({
+        track_id: trackId,
+        user_id: currentUser.id,
+        text
+    }).select().single();
+    if (!error && data) {
+        const newComment: Comment = {
+            id: data.id, userId: currentUser.id, username: currentUser.username,
+            avatar: currentUser.photoUrl, text, createdAt: data.created_at
+        };
+        setTracks(prev => prev.map(trk => trk.id === trackId ? { ...trk, comments: [newComment, ...(trk.comments || [])] } : trk));
+    }
+  };
+
+  const getChartTracks = async (period: 'week' | 'month'): Promise<Track[]> => {
+    const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
+    return mapTracksData(data || [], currentUser?.id);
+  };
+
+  const getLikedTracks = async (userId: number): Promise<Track[]> => {
+    const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
+    if (!likes || likes.length === 0) return [];
+    const ids = likes.map(l => l.track_id);
+    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
+    return mapTracksData(trks || [], currentUser?.id);
+  };
+
+  const getUserHistory = async (userId: number): Promise<Track[]> => {
+    const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', userId).order('played_at', { ascending: false }).limit(20);
+    if (!hist || hist.length === 0) return [];
+    const ids = [...new Set(hist.map(h => h.track_id))];
+    const { data: trks } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').in('id', ids);
+    return mapTracksData(trks || [], currentUser?.id);
+  };
+
   useEffect(() => {
     const init = async () => {
         setIsLoading(true);
         const tg = (window as any).Telegram?.WebApp;
         if (tg?.initDataUnsafe?.user) {
             const user = await fetchUserById(tg.initDataUnsafe.user.id);
-            if (user) setCurrentUser(user);
+            if (user) {
+              setCurrentUser(user);
+              await fetchUserPlaylists(user.id);
+              await fetchSavedPlaylists(user.id);
+            }
         }
         await fetchTracks();
         await fetchRooms();
@@ -254,12 +440,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return React.createElement(StoreContext.Provider, {
     value: {
       currentUser, tracks, myPlaylists, savedPlaylists, rooms, isLoading, audioIntensity, setAudioIntensity, language, setLanguage, t,
-      uploadTrack: async () => {}, uploadAlbum: async () => {}, generateTrackDescription,
-      createPlaylist: async () => {}, addToPlaylist: async () => {}, fetchUserPlaylists: async () => [],
-      fetchSavedPlaylists: async () => [], toggleSavePlaylist: async () => {}, fetchPlaylistTracks: async () => [],
-      deleteTrack: async () => {}, downloadTrack: async () => {}, toggleLike: async () => {}, addComment: async () => {},
+      uploadTrack, uploadAlbum, generateTrackDescription,
+      createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists, toggleSavePlaylist, fetchPlaylistTracks,
+      deleteTrack, downloadTrack, toggleLike, addComment,
       recordListen, updateProfile, uploadImage, fetchUserById,
-      getChartTracks: async () => [], getLikedTracks: async () => [], getUserHistory: async () => [],
+      getChartTracks, getLikedTracks, getUserHistory,
       createRoom, deleteRoom, fetchRooms, sendRoomMessage, donateToRoom: async () => true
     }
   }, children);

@@ -4,6 +4,7 @@ import { useStore } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
 import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
+import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
   const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, tracks, t } = useStore();
@@ -20,6 +21,26 @@ const Rooms: React.FC = () => {
 
   const chatRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+
+  // Real-time Chat Subscription
+  useEffect(() => {
+    if (!activeRoom) {
+      setMessages([]);
+      return;
+    }
+
+    const channel = supabase.channel(`room:${activeRoom.id}`);
+    
+    channel
+      .on('broadcast', { event: 'message' }, (payload) => {
+        setMessages(prev => [...prev, payload.payload as RoomMessage]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeRoom]);
 
   // Simulation of room intensity
   useEffect(() => {
@@ -85,7 +106,7 @@ const Rooms: React.FC = () => {
       };
       
       setMessages(prev => [...prev, newMessage]);
-      await sendRoomMessage(activeRoom.id, inputText);
+      await sendRoomMessage(activeRoom.id, newMessage);
       setInputText('');
   };
 
