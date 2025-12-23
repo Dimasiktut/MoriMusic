@@ -128,19 +128,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           audioUrl: trk.audio_url, 
           duration: trk.duration || 0,
           createdAt: trk.created_at, 
-          plays: trk.plays || 0, 
-          likes: trk.likes_count || 0, 
+          // Robust count checking for different DB structures
+          plays: typeof trk.plays === 'number' ? trk.plays : (trk.play_count || 0), 
+          likes: typeof trk.likes_count === 'number' ? trk.likes_count : (trk.likes || 0), 
           comments: [], 
           isLikedByCurrentUser: userLikes.includes(trk.id), 
-          isVerifiedUploader: trk.profiles?.is_verified || (trk.plays || 0) > 1000 
+          isVerifiedUploader: !!trk.profiles?.is_verified || (trk.plays || 0) > 1000 
       }));
   }, []);
 
   const fetchTracks = useCallback(async (userId?: number) => {
     try {
+      // Fix: Removed is_verified from join as it's causing issues
       const { data: tracksData, error } = await supabase
         .from('tracks')
-        .select('*, profiles:uploader_id(username, photo_url, is_verified)')
+        .select('*, profiles:uploader_id(username, photo_url)')
         .order('created_at', { ascending: false })
         .limit(30);
       
@@ -148,14 +150,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       let userLikes: string[] = [];
       if (userId) {
-        const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
-        if (likes) userLikes = likes.map(l => l.track_id);
+        const { data: likes, error: likesError } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
+        if (!likesError && likes) userLikes = likes.map(l => l.track_id);
       }
 
       const mapped = mapTracksData(tracksData || [], userLikes);
       setTracks(mapped);
-    } catch (e) {
-      console.error("Fetch tracks error:", e);
+    } catch (e: any) {
+      console.error("Fetch tracks error:", e.message || e);
     }
   }, [mapTracksData]);
 
@@ -173,20 +175,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           djName: r.profiles?.username || 'DJ',
           djAvatar: r.profiles?.photo_url || '',
           coverUrl: r.cover_url, startTime: r.created_at,
-          status: r.status, listeners: Math.floor(Math.random() * 50) + 1, 
-          isMicActive: r.is_mic_active || false
+          status: r.status, listeners: r.listeners_count || Math.floor(Math.random() * 5) + 1, 
+          isMicActive: !!r.is_mic_active
         }));
         setRooms(mapped);
       }
-    } catch (e) {}
+    } catch (e: any) {
+        console.error("Fetch rooms exception:", e.message || e);
+    }
   }, []);
 
   const refreshUserContext = useCallback(async (userId: number) => {
     try {
-      const [{ data: likesData }, { data: plData }, { data: savedData }] = await Promise.all([
+      const [{ data: likesData }, { data: plData }] = await Promise.all([
         supabase.from('track_likes').select('track_id').eq('user_id', userId),
-        supabase.from('playlists').select('*').eq('user_id', userId),
-        supabase.from('saved_playlists').select('playlists(*)').eq('user_id', userId)
+        supabase.from('playlists').select('*').eq('user_id', userId)
       ]);
       
       const userLikes = likesData?.map(l => l.track_id) || [];
@@ -201,6 +204,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           })));
       }
       
+      const { data: savedData } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', userId);
       if (savedData) {
           setSavedPlaylists(savedData.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({
             id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
@@ -245,8 +249,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (inserted) {
           const newRoom: Room = {
               id: inserted.id, title: inserted.title, djId: inserted.dj_id,
-              djName: inserted.profiles?.username || 'DJ',
-              djAvatar: inserted.profiles?.photo_url || '',
+              djName: inserted.profiles?.username || currentUser.username,
+              djAvatar: inserted.profiles?.photo_url || currentUser.photoUrl || '',
               coverUrl: inserted.cover_url, startTime: inserted.created_at,
               status: inserted.status, listeners: 1, isMicActive: false
           };
@@ -254,9 +258,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           setActiveRoom(newRoom);
       }
     } catch (err: any) {
-        console.error("Room creation error", err);
+        console.error("Room creation error:", err.message || err);
         const tg = (window as any).Telegram?.WebApp;
-        tg?.showAlert(`Creation failed: ${err.message || 'Check your internet connection'}`);
+        tg?.showAlert(`Creation failed: ${err.message || 'Server error'}`);
     } finally {
       setIsLoading(false);
     }
@@ -306,12 +310,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
     try {
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-      if (!profile) return null;
+      const { data: profile, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      if (error || !profile) return null;
       return {
           id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
           photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
-          stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }, isVerified: profile.is_verified
+          stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }, isVerified: !!profile.is_verified
       };
     } catch (e) { return null; }
   }, []);
@@ -494,8 +498,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
         }
 
-        await Promise.allSettled([tracksPromise, roomsPromise, authPromise]);
+        await Promise.allSettled([tracksPromise, roomsPromise]);
         setIsLoading(false);
+        await authPromise;
     };
 
     initApp();
