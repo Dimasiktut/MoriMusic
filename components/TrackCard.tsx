@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Share2, Trash2, Check, Link, BadgeCheck, ListMusic, Download } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2 } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -12,16 +12,12 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, addComment, deleteTrack, downloadTrack, addToPlaylist, myPlaylists, t, language } = useStore();
+  const { currentUser, toggleLike, deleteTrack, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
-  const [commentText, setCommentText] = useState('');
   
   const [showMenu, setShowMenu] = useState(false);
-  const [viewPlaylistMenu, setViewPlaylistMenu] = useState(false);
-
   const [isCopied, setIsCopied] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -29,7 +25,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
-        setViewPlaylistMenu(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -41,13 +36,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     setIsLiking(true);
     setTimeout(() => setIsLiking(false), 400); 
     toggleLike(track.id);
-  };
-
-  const handleCommentSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!commentText.trim()) return;
-    addComment(track.id, commentText);
-    setCommentText('');
   };
 
   const handleShare = async (e: React.MouseEvent) => {

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ExternalLink, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, Zap, TrendingUp, Send } from '../components/ui/Icons';
+import { Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, Zap, TrendingUp } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
@@ -25,7 +25,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [historyTracks, setHistoryTracks] = useState<Track[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
-  const [loadingPlaylists, setLoadingPlaylists] = useState(false);
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
@@ -59,9 +58,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
             setHistoryTracks(await getUserHistory(profileUser.id));
             setLoadingHistory(false);
         } else if (activeTab === 'playlists') {
-            setLoadingPlaylists(true);
             setPlaylists(await fetchUserPlaylists(profileUser.id));
-            setLoadingPlaylists(false);
         }
     };
     loadData();

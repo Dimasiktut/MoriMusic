@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { ArrowLeft, Camera, Save, Globe, Loader2, Image as ImageIcon, Send } from '../components/ui/Icons';
+import { ArrowLeft, Camera, Save, Loader2, Image as ImageIcon } from '../components/ui/Icons';
 import { User } from '../types';
 
 interface SettingsProps {

@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Track, User, Comment, Playlist, Concert } from '../types';
 import { INITIAL_USER, TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
 import { supabase } from './supabase';
+// @ts-ignore
 import { GoogleGenAI } from "@google/genai";
 
 interface UploadTrackData {
@@ -54,7 +55,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
+  const [, setMyPlaylists] = useState<Playlist[]>([]);
   const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,7 +219,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
       try {
-          // Use process.env.API_KEY which is provided in the environment
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
           const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
           
@@ -615,7 +615,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return null; 
   }, [getUserStats]);
 
-  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => { 
+  const getChartTracks = useCallback(async (): Promise<Track[]> => { 
       const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
       return mapTracksData(data || [], currentUser?.id);
   }, [currentUser, mapTracksData]);
@@ -640,7 +640,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     StoreContext.Provider,
     {
       value: {
-        currentUser, tracks, myPlaylists, savedPlaylists, concerts, isLoading, language, setLanguage, t,
+        currentUser, tracks, myPlaylists: [], savedPlaylists, concerts, isLoading, language, setLanguage, t,
         uploadTrack, uploadAlbum, createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists, toggleSavePlaylist,
         fetchPlaylistTracks, deleteTrack, downloadTrack, toggleLike, addComment, recordListen, updateProfile, uploadImage,
         fetchUserById, getChartTracks, getLikedTracks, getUserHistory, donateToConcert, generateTrackDescription
