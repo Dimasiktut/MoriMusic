@@ -58,7 +58,6 @@ interface StoreContextType {
   deleteRoom: (roomId: string) => Promise<void>;
   fetchRooms: () => Promise<void>;
   sendRoomMessage: (roomId: string, message: Partial<RoomMessage>) => Promise<void>;
-  // Fix: Added missing donateToRoom property to interface to align with StoreProvider implementation
   donateToRoom: () => Promise<boolean>;
 }
 
@@ -143,9 +142,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [mapTracksData]);
 
   const fetchRooms = useCallback(async () => {
+    // Simplified query to avoid join errors if relations are missing
     const { data, error } = await supabase
       .from('rooms')
-      .select('*, profiles:dj_id(username, photo_url), tracks(*)')
+      .select('*, profiles:dj_id(username, photo_url)')
       .eq('status', 'live')
       .order('created_at', { ascending: false });
 
@@ -160,21 +160,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         startTime: r.created_at,
         status: r.status,
         listeners: Math.floor(Math.random() * 50) + 1, 
-        currentTrack: r.tracks ? {
-          id: r.tracks.id,
-          title: r.tracks.title,
-          audioUrl: r.tracks.audio_url,
-          coverUrl: r.tracks.cover_url,
-          uploaderName: r.profiles?.username || 'DJ',
-          uploaderId: r.dj_id
-        } as any : undefined
+        currentTrack: undefined // Can be hydrated if track_id exists
       }));
       setRooms(mapped);
     }
   }, []);
 
   const createRoom = async (data: CreateRoomData) => {
-    if (!currentUser) return;
+    const tg = (window as any).Telegram?.WebApp;
+    if (!currentUser) {
+        tg?.showAlert("You must be logged in to create a room.");
+        return;
+    }
+    
     setIsLoading(true);
     try {
       let coverUrl = '';
@@ -182,15 +180,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         coverUrl = await uploadImage(data.coverFile, 'music', `room_covers/${currentUser.id}/${Date.now()}`);
       }
       
-      const { error } = await supabase.from('rooms').insert({
+      const payload: any = {
         title: data.title,
         dj_id: currentUser.id,
         cover_url: coverUrl,
-        track_id: data.trackId,
         status: 'live'
-      });
+      };
 
-      if (!error) await fetchRooms();
+      if (data.trackId && data.trackId !== "") {
+          payload.track_id = data.trackId;
+      }
+      
+      const { error } = await supabase.from('rooms').insert(payload);
+
+      if (error) {
+          console.error("Room creation error:", error);
+          tg?.showAlert(`Error: ${error.message}`);
+      } else {
+          await fetchRooms();
+      }
+    } catch (e: any) {
+        tg?.showAlert(`Failed to create room: ${e.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -215,15 +225,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const uploadImage = async (file: File, bucket: string, path: string): Promise<string> => {
-    const { data } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+    const { data, error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
+    if (error) throw error;
     const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data!.path);
     return publicUrl;
   };
 
   const updateProfile = async (updates: Partial<User>) => {
     if (!currentUser) return;
-    await supabase.from('profiles').upsert({ id: currentUser.id, ...updates });
-    setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
+    const { error } = await supabase.from('profiles').upsert({ id: currentUser.id, ...updates });
+    if (!error) setCurrentUser(prev => prev ? { ...prev, ...updates } : null);
   };
 
   const fetchUserById = async (userId: number): Promise<User | null> => {
@@ -423,7 +434,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsLoading(true);
         const tg = (window as any).Telegram?.WebApp;
         if (tg?.initDataUnsafe?.user) {
-            const user = await fetchUserById(tg.initDataUnsafe.user.id);
+            const tgUser = tg.initDataUnsafe.user;
+            let user = await fetchUserById(tgUser.id);
+            
+            // Auto-register user if profile doesn't exist
+            if (!user) {
+                const { error } = await supabase.from('profiles').insert({
+                    id: tgUser.id,
+                    username: tgUser.username || `user_${tgUser.id}`,
+                    first_name: tgUser.first_name,
+                    last_name: tgUser.last_name,
+                    photo_url: tgUser.photo_url || ''
+                });
+                if (!error) user = await fetchUserById(tgUser.id);
+            }
+
             if (user) {
               setCurrentUser(user);
               await fetchUserPlaylists(user.id);

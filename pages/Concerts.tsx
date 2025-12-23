@@ -71,16 +71,22 @@ const Rooms: React.FC = () => {
       e.preventDefault();
       if (!newRoomTitle.trim()) return;
       setIsCreating(true);
-      await createRoom({
-          title: newRoomTitle,
-          coverFile: newRoomCover,
-          trackId: selectedTrackId || undefined
-      });
-      setIsCreating(false);
-      setShowCreateModal(false);
-      setNewRoomTitle('');
-      setNewRoomCover(null);
-      setPreviewCover(null);
+      
+      try {
+        await createRoom({
+            title: newRoomTitle,
+            coverFile: newRoomCover,
+            trackId: selectedTrackId || undefined
+        });
+        
+        // Only close if no error occurred in createRoom (though errors handled in store)
+        setShowCreateModal(false);
+        setNewRoomTitle('');
+        setNewRoomCover(null);
+        setPreviewCover(null);
+      } finally {
+        setIsCreating(false);
+      }
   };
 
   const handleCloseRoom = async () => {
