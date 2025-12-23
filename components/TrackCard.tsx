@@ -9,11 +9,7 @@ import {
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
-interface TrackCardProps {
-  track: Track;
-  onPlay: (track: Track) => void;
-  onOpenProfile?: (userId: number) => void;
-}
+interface TrackCardProps { track: Track; onPlay: (track: Track) => void; onOpenProfile?: (userId: number) => void; }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
   const { currentUser, toggleLike, deleteTrack, addComment, addToPlaylist, myPlaylists, t, downloadTrack } = useStore();
@@ -24,15 +20,13 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   const [isPlaylistModalOpen, setIsPlaylistModalOpen] = useState(false);
   const [isGeneratingSnippet, setIsGeneratingSnippet] = useState(false);
   const [snippetUrl, setSnippetUrl] = useState<string | null>(null);
+  const [snippetBlob, setSnippetBlob] = useState<Blob | null>(null);
 
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close menu on click outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setIsMenuOpen(false);
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -44,8 +38,37 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('light');
   };
 
-  const handleShare = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDownloadSnippet = () => {
+    if (!snippetUrl) return;
+    const link = document.createElement('a');
+    link.href = snippetUrl;
+    link.download = `mori_snippet_${track.title.toLowerCase().replace(/\s+/g, '_')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleShareSnippet = async () => {
+    if (!snippetBlob) return;
+    
+    const file = new File([snippetBlob], "snippet.png", { type: "image/png" });
+    const shareData = {
+      files: [file],
+      title: 'MoriMusic Snippet',
+      text: `${t('track_listen_text')} ${track.title} on MoriMusic!`,
+    };
+
+    // Try native share if available (Mobile Telegram/Browsers)
+    if (navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err) {
+        console.log("Native share failed, falling back to link", err);
+      }
+    }
+
+    // Fallback to link share
     const deepLink = `${TELEGRAM_APP_LINK}?startapp=track_${track.id}`;
     const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(`${t('track_listen_text')} ${track.title} ${t('track_by')} ${track.uploaderName} on MoriMusic!`)}`;
     if ((window as any).Telegram?.WebApp) {
@@ -80,85 +103,58 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
       try {
         const coverImg = await loadImage(track.coverUrl);
-        
-        // 1. Draw Background (Blurred Cover)
-        ctx.filter = 'blur(50px) brightness(0.4)';
-        ctx.drawImage(coverImg, -100, -100, 1280, 1280);
+        ctx.filter = 'blur(60px) brightness(0.5)';
+        ctx.drawImage(coverImg, -150, -150, 1380, 1380);
         ctx.filter = 'none';
 
-        // 2. Draw Vignette/Gradient
-        const gradient = ctx.createRadialGradient(540, 540, 200, 540, 540, 800);
-        gradient.addColorStop(0, 'rgba(0,0,0,0)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0.8)');
+        const gradient = ctx.createRadialGradient(540, 540, 200, 540, 540, 900);
+        gradient.addColorStop(0, 'rgba(0,0,0,0.1)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0.9)');
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, 1080, 1080);
 
-        // 3. Draw Rounded Cover in Center
-        const coverSize = 600;
+        const coverSize = 640;
         const x = (1080 - coverSize) / 2;
-        const y = 180;
-        const radius = 80;
+        const y = 160;
+        const radius = 100;
 
         ctx.save();
         ctx.beginPath();
-        ctx.moveTo(x + radius, y);
-        ctx.lineTo(x + coverSize - radius, y);
-        ctx.quadraticCurveTo(x + coverSize, y, x + coverSize, y + radius);
-        ctx.lineTo(x + coverSize, y + coverSize - radius);
-        ctx.quadraticCurveTo(x + coverSize, y + coverSize, x + coverSize - radius, y + coverSize);
-        ctx.lineTo(x + radius, y + coverSize);
-        ctx.quadraticCurveTo(x, y + coverSize, x, y + coverSize - radius);
-        ctx.lineTo(x, y + radius);
-        ctx.quadraticCurveTo(x, y, x + radius, y);
-        ctx.closePath();
+        ctx.roundRect(x, y, coverSize, coverSize, radius);
         ctx.clip();
         ctx.drawImage(coverImg, x, y, coverSize, coverSize);
         ctx.restore();
 
-        // 4. Glow effect around cover
-        ctx.shadowColor = '#38bdf8';
-        ctx.shadowBlur = 40;
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
-        ctx.lineWidth = 4;
-        ctx.stroke();
+        ctx.shadowColor = 'rgba(56, 189, 248, 0.5)';
+        ctx.shadowBlur = 60;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.4)';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(x, y, coverSize, coverSize);
         ctx.shadowBlur = 0;
 
-        // 5. Text Info
         ctx.fillStyle = 'white';
         ctx.textAlign = 'center';
-        ctx.font = 'italic 900 64px system-ui';
-        ctx.fillText(track.title.toUpperCase(), 540, 860);
+        ctx.font = 'italic 900 72px system-ui';
+        ctx.fillText(track.title.toUpperCase(), 540, 880);
 
         ctx.fillStyle = '#94a3b8';
-        ctx.font = 'bold 36px system-ui';
-        ctx.fillText(track.uploaderName.toUpperCase(), 540, 920);
+        ctx.font = 'bold 38px system-ui';
+        ctx.fillText(track.uploaderName.toUpperCase(), 540, 940);
 
-        // 6. Mori Logo Branding
         ctx.fillStyle = '#38bdf8';
         ctx.font = '900 32px system-ui';
-        ctx.letterSpacing = '10px';
-        ctx.fillText('MORIMUSIC', 540, 1000);
+        ctx.letterSpacing = '12px';
+        ctx.fillText('MORIMUSIC', 540, 1020);
 
-        // 7. Waveform decoration
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 6;
-        ctx.lineCap = 'round';
-        for(let i = 0; i < 20; i++) {
-          const h = 20 + Math.random() * 40;
-          ctx.beginPath();
-          ctx.moveTo(400 + i * 15, 780 - h);
-          ctx.lineTo(400 + i * 15, 780 + h);
-          ctx.stroke();
-        }
-
-        const dataUrl = canvas.toDataURL('image/png');
-        setSnippetUrl(dataUrl);
-      } catch (err) {
-        console.error("Canvas generation failed", err);
-      }
-    } finally {
-      setIsGeneratingSnippet(false);
-    }
+        canvas.toBlob((blob) => {
+          if (blob) {
+            setSnippetBlob(blob);
+            setSnippetUrl(URL.createObjectURL(blob));
+            if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+          }
+        }, 'image/png');
+      } catch (err) { console.error("Canvas error", err); }
+    } finally { setIsGeneratingSnippet(false); }
   };
 
   const handleAddComment = async (e: React.FormEvent) => {
@@ -171,36 +167,37 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
   return (
     <div className="bg-zinc-900 border border-white/5 rounded-[2rem] p-4 mb-4 shadow-xl hover:border-white/10 transition-all group relative">
       
-      {/* Snippet Overlay / Modal */}
+      {/* Snippet Modal */}
       {snippetUrl && (
-        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-xl p-6 flex flex-col items-center justify-center animate-in fade-in duration-300">
-           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-2xl border border-white/10 shadow-sky-500/20">
+        <div className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+           <div className="relative w-full aspect-square max-w-sm rounded-[3rem] overflow-hidden shadow-[0_0_50px_rgba(56,189,248,0.2)] border border-white/10">
               <img src={snippetUrl} className="w-full h-full object-cover" alt="Snippet" />
            </div>
            
-           <h3 className="text-white font-black text-xl uppercase italic mt-8 tracking-tighter">{t('track_share')}</h3>
-           <p className="text-zinc-500 text-xs font-bold uppercase mt-2 text-center max-w-xs leading-relaxed">
-             Visual snippet is ready for your story or chat!
-           </p>
+           <div className="mt-8 text-center">
+             <h3 className="text-white font-black text-2xl uppercase italic tracking-tighter">{t('track_share')}</h3>
+             <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60">Ready for Telegram Stories & Chats</p>
+           </div>
 
-           <div className="flex gap-4 mt-10 w-full max-w-sm">
+           <div className="grid grid-cols-2 gap-4 mt-10 w-full max-w-sm">
               <button 
-                onClick={() => setSnippetUrl(null)} 
-                className="flex-1 py-4 rounded-2xl border border-white/10 text-white font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all"
+                onClick={handleDownloadSnippet} 
+                className="py-4 bg-zinc-800 rounded-2xl text-white font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                {t('profile_playlist_cancel')}
+                <Download size={16} /> Save
               </button>
               <button 
-                onClick={handleShare}
-                className="flex-2 py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                onClick={handleShareSnippet}
+                className="py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> Send
+                <Send size={16} /> {snippetBlob && navigator.canShare ? 'Share File' : 'Share Link'}
               </button>
            </div>
+           <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">Close Preview</button>
         </div>
       )}
 
-      {/* Main Card Content */}
+      {/* Track Row */}
       <div className="flex gap-4 cursor-pointer" onClick={() => onPlay(track)}>
         <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex-shrink-0 overflow-hidden relative shadow-lg">
           {track.coverUrl ? (
@@ -244,7 +241,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={generateSnippet}
                 className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase text-sky-400 hover:bg-sky-500/10 flex items-center gap-3 transition-colors"
               >
-                <Zap size={16} fill="currentColor" /> Share Snippet
+                <Zap size={16} fill="currentColor" /> Visual Snippet
               </button>
               <button 
                 onClick={(e) => { e.stopPropagation(); setIsPlaylistModalOpen(true); setIsMenuOpen(false); }}
@@ -292,7 +289,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
 
         <div className="flex items-center gap-2">
             <span className="text-[9px] font-black uppercase text-zinc-700 tracking-widest">{track.plays} {t('track_plays')}</span>
-            <button onClick={handleShare} className="p-1.5 text-zinc-600 hover:text-sky-400 transition-colors">
+            <button onClick={generateSnippet} className="p-1.5 text-zinc-600 hover:text-sky-400 transition-colors">
                 <Share2 size={16} />
             </button>
         </div>
