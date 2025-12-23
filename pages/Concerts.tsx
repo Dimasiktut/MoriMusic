@@ -7,7 +7,7 @@ import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
-  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks } = useStore();
+  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks, tracks } = useStore();
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -145,6 +145,8 @@ const Rooms: React.FC = () => {
       if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
   };
 
+  const myTracks = tracks.filter(t => t.uploaderId === currentUser?.id);
+
   if (!activeRoom) {
       return (
           <div className="p-5 pb-32 animate-in fade-in">
@@ -198,6 +200,17 @@ const Rooms: React.FC = () => {
                               <div>
                                   <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">{t('concerts_create_title')}</label>
                                   <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500" placeholder="Radio Name..." />
+                              </div>
+                              <div>
+                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">Initial Track (Optional)</label>
+                                  <select 
+                                    value={selectedTrackId} 
+                                    onChange={e => setSelectedTrackId(e.target.value)} 
+                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500 appearance-none"
+                                  >
+                                      <option value="">None / Live Mic</option>
+                                      {myTracks.map(track => <option key={track.id} value={track.id}>{track.title}</option>)}
+                                  </select>
                               </div>
                               <button type="submit" disabled={isCreating || !newRoomTitle} className="w-full bg-sky-500 text-black py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-sky-500/20 disabled:opacity-30 flex items-center justify-center gap-3">
                                   {isCreating ? <Loader2 className="animate-spin" size={20}/> : <><Zap size={20} fill="currentColor"/> {t('concerts_create_btn')}</>}
