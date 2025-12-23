@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Track, User, Comment, Playlist, Concert } from '../types';
-import { TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
+import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
 import { GoogleGenAI } from "@google/genai";
 
@@ -225,16 +225,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Use Gemini API to generate track descriptions based on title and genre.
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
       try {
-          // Initialize Gemini AI using the mandatory process.env.API_KEY.
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
           const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
           
-          // Use ai.models.generateContent for content generation.
           const response = await ai.models.generateContent({
               model: 'gemini-3-flash-preview',
               contents: prompt,
           });
-          // Access .text property directly.
           return response.text || '';
       } catch (err) {
           console.error("AI Description Error:", err);
