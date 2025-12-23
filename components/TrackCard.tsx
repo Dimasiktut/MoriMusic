@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2 } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2, Send, Loader2 } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -12,8 +12,10 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, deleteTrack, t, language } = useStore();
+  const { currentUser, toggleLike, deleteTrack, addComment, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
+  const [commentText, setCommentText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [showMenu, setShowMenu] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -36,6 +38,19 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     setIsLiking(true);
     setTimeout(() => setIsLiking(false), 400); 
     toggleLike(track.id);
+  };
+
+  const handleCommentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!commentText.trim() || !currentUser || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    try {
+      await addComment(track.id, commentText.trim());
+      setCommentText('');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleShare = async (e: React.MouseEvent) => {
@@ -112,12 +127,55 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 <Heart size={20} fill={track.isLikedByCurrentUser ? "currentColor" : "none"} className={isLiking ? 'scale-125' : ''}/>
                 <span>{track.likes}</span>
             </button>
-            <button onClick={() => setShowComments(!showComments)} className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-white transition-colors">
+            <button onClick={() => setShowComments(!showComments)} className={`flex items-center gap-2 text-sm font-bold transition-colors ${showComments ? 'text-sky-400' : 'text-zinc-500 hover:text-white'}`}>
                 <MessageCircle size={20} /><span>{track.comments?.length || 0}</span>
             </button>
         </div>
         <div className="text-[10px] font-black uppercase text-zinc-600 tracking-tighter">{track.plays.toLocaleString()} {t('track_plays')}</div>
       </div>
+
+      {/* Comments Section */}
+      {showComments && (
+        <div className="mt-5 pt-5 border-t border-white/5 space-y-4 animate-in slide-in-from-top-2 duration-300">
+          <form onSubmit={handleCommentSubmit} className="relative">
+            <input 
+              type="text" 
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder={t('track_comment_placeholder')}
+              className="w-full bg-black/50 border border-white/5 rounded-xl py-3 pl-4 pr-12 text-sm text-white focus:ring-1 focus:ring-sky-500 outline-none transition-all placeholder:text-zinc-600"
+            />
+            <button 
+              type="submit" 
+              disabled={!commentText.trim() || isSubmitting}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-sky-400 disabled:opacity-30 hover:text-white transition-colors"
+            >
+              {isSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            </button>
+          </form>
+
+          <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+            {track.comments && track.comments.length > 0 ? (
+              track.comments.map((comment) => (
+                <div key={comment.id} className="flex gap-3">
+                  <div className="w-8 h-8 rounded-full bg-zinc-800 flex-shrink-0 overflow-hidden border border-white/10">
+                    {comment.avatar ? <img src={comment.avatar} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-sky-500 flex items-center justify-center text-[10px] font-bold text-black uppercase italic">{comment.username[0]}</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-white uppercase italic tracking-wider">{comment.username}</span>
+                      <span className="text-[8px] font-bold text-zinc-600 uppercase">{new Date(comment.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <p className="text-xs text-zinc-300 mt-1 leading-relaxed">{comment.text}</p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-[10px] font-black uppercase text-zinc-600 py-4 italic">{t('track_no_comments')}</p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
