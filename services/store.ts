@@ -153,7 +153,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           audioUrl: t.audio_url,
           duration: t.duration,
           createdAt: t.created_at,
-          plays: t.plays,
+          plays: t.plays || 0,
           likes: likesCount,
           comments: comments,
           isLikedByCurrentUser: userLikes.includes(t.id),
@@ -575,8 +575,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const recordListen = useCallback(async (trackId: string) => { 
       if (!currentUser) return;
-      await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
-      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, plays: t.plays + 1 } : t));
+      
+      // 1. Optimistic local update
+      setTracks(prev => prev.map(t => t.id === trackId ? { ...t, plays: (t.plays || 0) + 1 } : t));
+
+      try {
+          // 2. Insert into history
+          await supabase.from('listen_history').insert({ user_id: currentUser.id, track_id: trackId });
+          
+          // 3. Increment total plays in the 'tracks' table
+          const { data: trackData } = await supabase.from('tracks').select('plays').eq('id', trackId).single();
+          if (trackData) {
+              await supabase.from('tracks').update({ plays: (trackData.plays || 0) + 1 }).eq('id', trackId);
+          }
+      } catch (err) {
+          console.error("Failed to record listen:", err);
+      }
   }, [currentUser]);
 
   const updateProfile = useCallback(async (updates: Partial<User>) => { 

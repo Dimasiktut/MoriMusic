@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2, Send, Loader2, Download, ListPlus, X } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2, Send, Loader2, ListPlus, X } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -12,7 +12,7 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, deleteTrack, addComment, downloadTrack, addToPlaylist, myPlaylists, t, language } = useStore();
+  const { currentUser, toggleLike, deleteTrack, addComment, addToPlaylist, myPlaylists, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -118,10 +118,6 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                                 <ListPlus size={14} /> {t('track_add_playlist')}
                              </button>
 
-                             <button onClick={(e) => { e.stopPropagation(); downloadTrack(track); }} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-white hover:bg-sky-500 hover:text-black flex items-center gap-3 transition-colors">
-                                <Download size={14} /> {t('track_download')}
-                             </button>
-
                              {isOwner && (
                                 <button onClick={(e) => { e.stopPropagation(); deleteTrack(track.id); }} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-red-500 hover:bg-red-500 hover:text-white flex items-center gap-3 transition-colors">
                                     <Trash2 size={14} /> {t('track_delete')}
@@ -172,7 +168,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 <MessageCircle size={16} /><span>{track.comments?.length || 0}</span>
             </button>
         </div>
-        <div className="text-[9px] font-black uppercase text-zinc-600 tracking-tighter">{track.plays.toLocaleString()} {t('track_plays')}</div>
+        <div className="text-[9px] font-black uppercase text-zinc-600 tracking-tighter">{(track.plays || 0).toLocaleString()} {t('track_plays')}</div>
       </div>
 
       {/* Comments Section */}

@@ -1,7 +1,11 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../services/store';
-import { Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, Zap, TrendingUp } from '../components/ui/Icons';
+import { 
+    Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
+    ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, 
+    Zap, TrendingUp, Globe, Send, ExternalLink 
+} from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
@@ -33,8 +37,17 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [loadingPlaylistTracks, setLoadingPlaylistTracks] = useState(false);
 
+  // Determine if it's the current user's profile to prevent redundant fetches
+  const isOwnProfile = useMemo(() => {
+    if (!targetUserId) return true;
+    return currentUser?.id === targetUserId;
+  }, [targetUserId, currentUser?.id]);
+
   useEffect(() => {
     const loadUser = async () => {
+        // If targetUserId is same as current profile, don't reload
+        if (profileUser?.id === targetUserId && targetUserId !== null) return;
+
         if (targetUserId && targetUserId !== currentUser?.id) {
             setLoadingProfile(true);
             const user = await fetchUserById(targetUserId);
@@ -45,25 +58,25 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
         }
     };
     loadUser();
-  }, [targetUserId, currentUser, fetchUserById]);
+  }, [targetUserId, currentUser?.id, fetchUserById]); // Only depend on ID, not full object
 
   useEffect(() => {
     const loadData = async () => {
         if (!profileUser) return;
-        if (activeTab === 'likes') {
+        if (activeTab === 'likes' && likedTracks.length === 0) {
             setLoadingLikes(true);
             setLikedTracks(await getLikedTracks(profileUser.id));
             setLoadingLikes(false);
-        } else if (activeTab === 'history') {
+        } else if (activeTab === 'history' && historyTracks.length === 0) {
             setLoadingHistory(true);
             setHistoryTracks(await getUserHistory(profileUser.id));
             setLoadingHistory(false);
-        } else if (activeTab === 'playlists') {
+        } else if (activeTab === 'playlists' && playlists.length === 0) {
             setPlaylists(await fetchUserPlaylists(profileUser.id));
         }
     };
     loadData();
-  }, [activeTab, profileUser, getLikedTracks, getUserHistory, fetchUserPlaylists]);
+  }, [activeTab, profileUser?.id, getLikedTracks, getUserHistory, fetchUserPlaylists]);
 
   useEffect(() => {
       const loadPlaylistTracks = async () => {
@@ -74,7 +87,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
           }
       };
       loadPlaylistTracks();
-  }, [selectedPlaylist, fetchPlaylistTracks]);
+  }, [selectedPlaylist?.id, fetchPlaylistTracks]);
 
   const handleCreatePlaylist = async () => {
       if (!newPlaylistTitle.trim()) return;
@@ -106,7 +119,10 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
           genreCounts[t.genre] = (genreCounts[t.genre] || 0) + 1;
       });
       
-      const topGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0][0].toLowerCase();
+      const sortedGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]);
+      if (sortedGenres.length === 0) return 'default';
+      
+      const topGenre = sortedGenres[0][0].toLowerCase();
       
       if (topGenre.includes('phonk')) return 'phonk';
       if (topGenre.includes('lo-fi') || topGenre.includes('chill')) return 'lofi';
@@ -119,7 +135,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   if (loadingProfile) return <div className="p-5 pt-20"><TrackSkeleton /><TrackSkeleton /></div>;
   if (!profileUser) return <div className="p-10 text-center text-zinc-600 font-bold uppercase italic">{t('profile_not_found')}</div>;
 
-  const isOwnProfile = currentUser?.id === profileUser.id;
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
   const currentVibe = getProfileVibe();
 
@@ -183,8 +198,8 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            <AuraEffect vibe={currentVibe} />
            {profileUser.headerUrl ? <img src={profileUser.headerUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black/20" />}
            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
-           {onBack && <button onClick={onBack} className="absolute top-6 left-5 text-white p-3 bg-black/30 rounded-full border border-white/10 backdrop-blur-md z-20"><ArrowLeft size={24} /></button>}
-           {isOwnProfile && <button onClick={onEditProfile} className="absolute top-6 right-5 text-white p-3 bg-black/30 rounded-full border border-white/10 backdrop-blur-md z-20"><Settings size={24} /></button>}
+           {onBack && <button onClick={onBack} className="absolute top-6 left-5 text-white p-3 bg-black/40 rounded-full border border-white/10 backdrop-blur-md z-20"><ArrowLeft size={24} /></button>}
+           {isOwnProfile && <button onClick={onEditProfile} className="absolute top-6 right-5 text-white p-3 bg-black/40 rounded-full border border-white/10 backdrop-blur-md z-20"><Settings size={24} /></button>}
        </div>
 
        <div className="px-5 -mt-20 relative z-10 flex flex-col items-center">
@@ -202,17 +217,46 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            
            <p className="text-center text-zinc-400 text-sm mt-3 font-bold max-w-xs">{profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}</p>
 
-           {isOwnProfile && profileUser.stats.uploads > 0 && (
+           {/* Social Links Block */}
+           <div className="flex items-center justify-center gap-3 mt-5">
+                {profileUser.links?.telegram && (
+                    <a href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-sky-500/10 rounded-2xl border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
+                        <Send size={18} />
+                    </a>
+                )}
+                {profileUser.links?.spotify && (
+                    <a href={profileUser.links.spotify} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all">
+                        <Music size={18} />
+                    </a>
+                )}
+                {profileUser.links?.yandex && (
+                    <a href={profileUser.links.yandex} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-black transition-all">
+                        <Zap size={18} fill="currentColor" />
+                    </a>
+                )}
+                {profileUser.links?.soundcloud && (
+                    <a href={profileUser.links.soundcloud} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-orange-500/10 rounded-2xl border border-orange-500/20 text-orange-400 hover:bg-orange-500 hover:text-black transition-all">
+                        <Headphones size={18} />
+                    </a>
+                )}
+                {profileUser.links?.other && (
+                    <a href={profileUser.links.other} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-zinc-500/10 rounded-2xl border border-zinc-500/20 text-zinc-400 hover:bg-zinc-500 hover:text-black transition-all">
+                        <Globe size={18} />
+                    </a>
+                )}
+           </div>
+
+           {profileUser.stats.uploads > 0 && (
                <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2rem] p-6 shadow-inner relative overflow-hidden">
                    <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">
                        <TrendingUp size={14} /> Artist Hub
                    </div>
                    <div className="flex justify-between items-center text-center relative z-10">
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.totalPlays.toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Plays</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Plays</div></div>
                         <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Likes</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Likes</div></div>
                         <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.uploads}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Tracks</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Tracks</div></div>
                    </div>
                </div>
            )}
