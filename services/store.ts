@@ -3,7 +3,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { Track, User, Comment, Playlist, Concert } from '../types';
 import { INITIAL_USER, TRANSLATIONS, Language, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } from '../constants';
 import { supabase } from './supabase';
-// @ts-ignore
 import { GoogleGenAI } from "@google/genai";
 
 interface UploadTrackData {
@@ -219,7 +218,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
       try {
-          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+          const ai = new GoogleGenAI({ apiKey: (import.meta as any).env?.VITE_GEMINI_API_KEY || '' });
           const prompt = `Write a short, engaging, and professional musical description for a track titled "${title}" in the genre of "${genre}". Use the language: ${language === 'ru' ? 'Russian' : 'English'}. Make it cool for a social music platform. Max 200 characters.`;
           
           const response = await ai.models.generateContent({
@@ -615,7 +614,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return null; 
   }, [getUserStats]);
 
-  const getChartTracks = useCallback(async (): Promise<Track[]> => { 
+  const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => { 
       const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url)').order('plays', { ascending: false }).limit(20);
       return mapTracksData(data || [], currentUser?.id);
   }, [currentUser, mapTracksData]);
