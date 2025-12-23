@@ -1,10 +1,9 @@
-
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { 
     Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
     ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, 
-    Zap, TrendingUp, Globe, Send
+    Zap, TrendingUp, Globe
 } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
@@ -185,7 +184,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     <div className="pb-32 animate-in slide-in-from-bottom-4 duration-500 relative">
        {showCreatePlaylist && (
            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-               <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-sm p-8 space-y-6 shadow-2xl">
+               <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-w-sm p-8 space-y-6 shadow-2xl">
                    <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">{t('profile_create_playlist')}</h3>
                    <input type="text" autoFocus value={newPlaylistTitle} onChange={e => setNewPlaylistTitle(e.target.value)} placeholder={t('profile_playlist_name')} className="w-full bg-black border border-white/5 rounded-2xl p-4 text-white font-bold text-sm focus:ring-2 focus:ring-sky-500/50 outline-none transition-all" />
                    <div className="flex gap-4">
@@ -223,7 +222,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            <div className="flex items-center justify-center gap-3 mt-5">
                 {profileUser.links?.telegram && (
                     <a href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-sky-500/10 rounded-2xl border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
-                        <Send size={18} />
+                        <Zap size={18} fill="currentColor" />
                     </a>
                 )}
                 {profileUser.links?.spotify && (
