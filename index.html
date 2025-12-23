@@ -43,6 +43,12 @@
       .animate-music-bar-2 { animation: music-bar-2 1.0s infinite ease-in-out; }
       .animate-music-bar-3 { animation: music-bar-3 0.8s infinite ease-in-out; }
 
+      @keyframes bounce-slow {
+        0%, 100% { transform: translate(0, 0); }
+        50% { transform: translate(20px, -20px); }
+      }
+      .animate-bounce-slow { animation: bounce-slow infinite ease-in-out; }
+
       .glass {
         background: rgba(10, 10, 10, 0.75);
         backdrop-filter: blur(12px);
@@ -53,6 +59,14 @@
       .bento-card {
         background: linear-gradient(145deg, #0f172a, #000000);
         border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      .no-scrollbar {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
       }
     </style>
   <script type="importmap">

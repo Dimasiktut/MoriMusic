@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Track } from '../types';
-import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2, Send, Loader2 } from './ui/Icons';
+import { Heart, MessageCircle, Play, MoreVertical, Link, BadgeCheck, Trash2, Send, Loader2, Download, ListPlus, X } from './ui/Icons';
 import { useStore } from '../services/store';
 import { TELEGRAM_APP_LINK } from '../constants';
 
@@ -12,12 +12,13 @@ interface TrackCardProps {
 }
 
 const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) => {
-  const { currentUser, toggleLike, deleteTrack, addComment, t, language } = useStore();
+  const { currentUser, toggleLike, deleteTrack, addComment, downloadTrack, addToPlaylist, myPlaylists, t, language } = useStore();
   const [showComments, setShowComments] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const [showMenu, setShowMenu] = useState(false);
+  const [showPlaylistSelector, setShowPlaylistSelector] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
 
@@ -27,6 +28,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
+        setShowPlaylistSelector(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -70,6 +72,13 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
     }
   };
 
+  const handleAddToPlaylist = (e: React.MouseEvent, playlistId: string) => {
+      e.stopPropagation();
+      addToPlaylist(track.id, playlistId);
+      setShowPlaylistSelector(false);
+      setShowMenu(false);
+  };
+
   const isOwner = currentUser?.id === track.uploaderId;
 
   return (
@@ -100,15 +109,47 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                         <MoreVertical size={18} />
                     </button>
                     {showMenu && (
-                        <div className="absolute right-0 top-8 bg-black border border-white/10 rounded-2xl shadow-2xl py-1.5 z-20 w-44 overflow-hidden backdrop-blur-xl">
+                        <div className="absolute right-0 top-8 bg-black border border-white/10 rounded-2xl shadow-2xl py-1.5 z-20 w-48 overflow-hidden backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
                              <button onClick={handleShare} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-white hover:bg-sky-500 hover:text-black flex items-center gap-3 transition-colors">
                                 <Link size={14} /> {isCopied ? t('track_copied') : t('track_share')}
                              </button>
+                             
+                             <button onClick={(e) => { e.stopPropagation(); setShowPlaylistSelector(true); }} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-white hover:bg-sky-500 hover:text-black flex items-center gap-3 transition-colors">
+                                <ListPlus size={14} /> {t('track_add_playlist')}
+                             </button>
+
+                             <button onClick={(e) => { e.stopPropagation(); downloadTrack(track); }} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-white hover:bg-sky-500 hover:text-black flex items-center gap-3 transition-colors">
+                                <Download size={14} /> {t('track_download')}
+                             </button>
+
                              {isOwner && (
                                 <button onClick={(e) => { e.stopPropagation(); deleteTrack(track.id); }} className="w-full text-left px-4 py-2.5 text-[10px] font-bold text-red-500 hover:bg-red-500 hover:text-white flex items-center gap-3 transition-colors">
                                     <Trash2 size={14} /> {t('track_delete')}
                                 </button>
                              )}
+                        </div>
+                    )}
+
+                    {/* Playlist Selector Overlay */}
+                    {showPlaylistSelector && (
+                        <div className="absolute right-0 top-8 bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl p-3 z-30 w-56 backdrop-blur-2xl animate-in slide-in-from-right-4 duration-300">
+                             <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/5">
+                                 <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">{t('profile_playlists')}</span>
+                                 <button onClick={(e) => { e.stopPropagation(); setShowPlaylistSelector(false); }} className="text-zinc-600 hover:text-white"><X size={14}/></button>
+                             </div>
+                             <div className="space-y-1.5 max-h-40 overflow-y-auto no-scrollbar">
+                                 {myPlaylists.length > 0 ? myPlaylists.map(p => (
+                                     <button 
+                                        key={p.id} 
+                                        onClick={(e) => handleAddToPlaylist(e, p.id)}
+                                        className="w-full text-left p-2 rounded-xl text-[10px] font-bold text-white hover:bg-sky-500/10 hover:text-sky-400 transition-all truncate"
+                                     >
+                                         {p.title}
+                                     </button>
+                                 )) : (
+                                     <div className="text-[8px] font-bold text-zinc-700 text-center py-4 uppercase">{t('profile_no_playlists')}</div>
+                                 )}
+                             </div>
                         </div>
                     )}
                 </div>

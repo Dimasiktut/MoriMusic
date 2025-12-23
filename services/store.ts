@@ -54,7 +54,7 @@ const StoreContext = createContext<StoreContextType | undefined>(undefined);
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
-  const [, setMyPlaylists] = useState<Playlist[]>([]);
+  const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
   const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [concerts, setConcerts] = useState<Concert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -251,11 +251,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
           const { data } = await supabase.from('playlists').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-          return (data as any[] || []).map((item) => ({
+          const mapped = (data as any[] || []).map((item) => ({
               id: item.id, userId: item.user_id, title: item.title, coverUrl: item.cover_url, createdAt: item.created_at, trackCount: 0 
           }));
+          if (userId === currentUser?.id) setMyPlaylists(mapped);
+          return mapped;
       } catch (e) { return []; }
-  }, []);
+  }, [currentUser]);
 
   const fetchSavedPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
       try {
@@ -278,8 +280,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const createPlaylist = useCallback(async (title: string) => {
       if(!currentUser) return;
       await supabase.from('playlists').insert({ user_id: currentUser.id, title: title, cover_url: null });
-      const updated = await fetchUserPlaylists(currentUser.id);
-      setMyPlaylists(updated);
+      await fetchUserPlaylists(currentUser.id);
   }, [currentUser, fetchUserPlaylists]);
 
   const toggleSavePlaylist = useCallback(async (playlistId: string) => {
@@ -350,7 +351,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               stats: stats, 
               badges: calculateBadges(stats, profile.isVerified)
             });
-            setMyPlaylists(await fetchUserPlaylists(userId));
+            await fetchUserPlaylists(userId);
             setSavedPlaylists(await fetchSavedPlaylists(userId));
           } else {
              setCurrentUser({ ...INITIAL_USER, id: userId, username: tgUser.username || `user_${userId}`, firstName: tgUser.first_name, photoUrl: tgUser.photo_url });
@@ -639,7 +640,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     StoreContext.Provider,
     {
       value: {
-        currentUser, tracks, myPlaylists: [], savedPlaylists, concerts, isLoading, language, setLanguage, t,
+        currentUser, tracks, myPlaylists, savedPlaylists, concerts, isLoading, language, setLanguage, t,
         uploadTrack, uploadAlbum, createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists, toggleSavePlaylist,
         fetchPlaylistTracks, deleteTrack, downloadTrack, toggleLike, addComment, recordListen, updateProfile, uploadImage,
         fetchUserById, getChartTracks, getLikedTracks, getUserHistory, donateToConcert, generateTrackDescription

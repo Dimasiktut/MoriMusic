@@ -5,6 +5,7 @@ import { Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, ListMusic, Plus, 
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
 import { TrackSkeleton } from '../components/ui/Skeleton';
+import AuraEffect, { VibeType } from '../components/AuraEffect';
 
 interface ProfileProps {
   onPlayTrack: (track: Track) => void;
@@ -95,11 +96,32 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
       }
   };
 
+  const getProfileVibe = (): VibeType => {
+      if (!profileUser) return 'default';
+      const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
+      if (userTracks.length === 0) return 'default';
+      
+      const genreCounts: Record<string, number> = {};
+      userTracks.forEach(t => {
+          genreCounts[t.genre] = (genreCounts[t.genre] || 0) + 1;
+      });
+      
+      const topGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0][0].toLowerCase();
+      
+      if (topGenre.includes('phonk')) return 'phonk';
+      if (topGenre.includes('lo-fi') || topGenre.includes('chill')) return 'lofi';
+      if (topGenre.includes('electronic') || topGenre.includes('techno')) return 'electronic';
+      if (topGenre.includes('rock')) return 'rock';
+      
+      return 'default';
+  };
+
   if (loadingProfile) return <div className="p-5 pt-20"><TrackSkeleton /><TrackSkeleton /></div>;
   if (!profileUser) return <div className="p-10 text-center text-zinc-600 font-bold uppercase italic">{t('profile_not_found')}</div>;
 
   const isOwnProfile = currentUser?.id === profileUser.id;
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
+  const currentVibe = getProfileVibe();
 
   if (selectedPlaylist) {
       const isSaved = savedPlaylists.some(p => p.id === selectedPlaylist.id);
@@ -158,15 +180,19 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
        )}
 
        <div className="h-48 bg-zinc-900 relative overflow-hidden">
-           {profileUser.headerUrl ? <img src={profileUser.headerUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black" />}
-           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+           <AuraEffect vibe={currentVibe} />
+           {profileUser.headerUrl ? <img src={profileUser.headerUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black/20" />}
+           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent" />
            {onBack && <button onClick={onBack} className="absolute top-6 left-5 text-white p-3 bg-black/30 rounded-full border border-white/10 backdrop-blur-md z-20"><ArrowLeft size={24} /></button>}
            {isOwnProfile && <button onClick={onEditProfile} className="absolute top-6 right-5 text-white p-3 bg-black/30 rounded-full border border-white/10 backdrop-blur-md z-20"><Settings size={24} /></button>}
        </div>
 
        <div className="px-5 -mt-20 relative z-10 flex flex-col items-center">
-           <div className="w-36 h-36 rounded-full border-8 border-black overflow-hidden bg-zinc-800 shadow-2xl">
-               {profileUser.photoUrl ? <img src={profileUser.photoUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-sky-500 text-black text-4xl font-black italic">M</div>}
+           <div className="relative group">
+               <div className="absolute -inset-1 bg-gradient-to-r from-sky-400 to-purple-500 rounded-full blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+               <div className="w-36 h-36 rounded-full border-8 border-black overflow-hidden bg-zinc-800 shadow-2xl relative">
+                   {profileUser.photoUrl ? <img src={profileUser.photoUrl} alt="" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-sky-500 text-black text-4xl font-black italic">M</div>}
+               </div>
            </div>
            
            <div className="flex items-center gap-2 mt-4">
@@ -177,11 +203,11 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            <p className="text-center text-zinc-400 text-sm mt-3 font-bold max-w-xs">{profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}</p>
 
            {isOwnProfile && profileUser.stats.uploads > 0 && (
-               <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2rem] p-6 shadow-inner">
-                   <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em]">
+               <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2rem] p-6 shadow-inner relative overflow-hidden">
+                   <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">
                        <TrendingUp size={14} /> Artist Hub
                    </div>
-                   <div className="flex justify-between items-center text-center">
+                   <div className="flex justify-between items-center text-center relative z-10">
                         <div><div className="text-2xl font-black text-white italic">{profileUser.stats.totalPlays.toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Plays</div></div>
                         <div className="h-8 w-px bg-white/5"></div>
                         <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Likes</div></div>
