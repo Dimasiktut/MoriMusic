@@ -97,11 +97,11 @@ const MainLayout: React.FC = () => {
   const [forceLoad, setForceLoad] = useState(false);
   const deepLinkProcessed = useRef(false);
 
-  // Safety timer to prevent infinite loading screens
+  // Faster safety timer (3s) for mobile networks
   useEffect(() => {
     const timer = setTimeout(() => {
       setForceLoad(true);
-    }, 8000);
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
   

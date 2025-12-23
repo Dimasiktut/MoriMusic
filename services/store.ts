@@ -113,7 +113,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  // Optimized Mapping: Avoid separate DB calls for each track item
   const mapTracksData = useCallback(async (rawTracks: any[], currentUserId?: number): Promise<Track[]> => {
       if (!rawTracks || rawTracks.length === 0) return [];
       
@@ -130,7 +129,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           uploaderAvatar: trk.profiles?.photo_url, title: trk.title, description: trk.description,
           genre: trk.genre, coverUrl: trk.cover_url, audioUrl: trk.audio_url, duration: trk.duration,
           createdAt: trk.created_at, plays: trk.plays || 0, likes: trk.likes_count || 0, 
-          comments: [], // Comments will be loaded lazily if needed
+          comments: [], 
           isLikedByCurrentUser: userLikes.includes(trk.id), isVerifiedUploader: (trk.plays || 0) > 1000 
       }));
   }, []);
@@ -140,7 +139,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const { data: tracksData, error } = await supabase
         .from('tracks')
         .select('*, profiles:uploader_id(username, photo_url)')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(40); // Limit initial load for mobile performance
       
       if (error) throw error;
       const mapped = await mapTracksData(tracksData || [], userId);
@@ -169,6 +169,23 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }));
         setRooms(mapped);
       }
+    } catch (e) {}
+  }, []);
+
+  // Update tracks with likes info once user is logged in
+  const refreshUserContext = useCallback(async (userId: number) => {
+    try {
+      const { data: likesData } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
+      const userLikes = likesData?.map(l => l.track_id) || [];
+      
+      setTracks(prev => prev.map(trk => ({
+        ...trk,
+        isLikedByCurrentUser: userLikes.includes(trk.id)
+      })));
+
+      // Fetch playlists in background
+      fetchUserPlaylists(userId);
+      fetchSavedPlaylists(userId);
     } catch (e) {}
   }, []);
 
@@ -236,13 +253,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const fetchUserById = async (userId: number): Promise<User | null> => {
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    if (!profile) return null;
-    return {
-        id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
-        photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
-        stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }, isVerified: profile.is_verified
-    };
+    try {
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      if (!profile) return null;
+      return {
+          id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
+          photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
+          stats: { uploads: 0, likesReceived: 0, totalPlays: 0 }, isVerified: profile.is_verified
+      };
+    } catch (e) { return null; }
   };
 
   const recordListen = async (trackId: string) => {
@@ -294,7 +313,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const mapped = (data || []).map((p: any) => ({
       id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
     }));
-    if (userId === currentUser?.id) setMyPlaylists(mapped);
+    if (userId === currentUser?.id || !currentUser) setMyPlaylists(mapped);
     return mapped;
   };
 
@@ -303,7 +322,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const mapped = data?.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({
       id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at
     })) || [];
-    if (userId === currentUser?.id) setSavedPlaylists(mapped);
+    if (userId === currentUser?.id || !currentUser) setSavedPlaylists(mapped);
     return mapped;
   };
 
@@ -382,46 +401,42 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     let isMounted = true;
-    const init = async () => {
-        try {
-            if (isMounted) setIsLoading(true);
-            const tg = (window as any).Telegram?.WebApp;
-            
-            let userId: number | undefined;
+    
+    const initApp = async () => {
+        // Start essential data fetching immediately
+        const tracksPromise = fetchTracks();
+        const roomsPromise = fetchRooms();
+        
+        // Wait for basic content to be ready
+        await Promise.allSettled([tracksPromise, roomsPromise]);
+        if (isMounted) setIsLoading(false);
 
-            if (tg?.initDataUnsafe?.user) {
-                const tgUser = tg.initDataUnsafe.user;
-                userId = tgUser.id;
-                let user = await fetchUserById(tgUser.id);
-                
-                if (!user) {
+        // BACKGROUND: Handle Telegram and User Auth
+        const tg = (window as any).Telegram?.WebApp;
+        if (tg?.initDataUnsafe?.user) {
+            const tgUser = tg.initDataUnsafe.user;
+            let user = await fetchUserById(tgUser.id);
+            
+            if (!user) {
+                try {
                     await supabase.from('profiles').insert({
                         id: tgUser.id, username: tgUser.username || `user_${tgUser.id}`,
                         first_name: tgUser.first_name, last_name: tgUser.last_name, photo_url: tgUser.photo_url || ''
                     });
                     user = await fetchUserById(tgUser.id);
-                }
+                } catch(e) {}
+            }
 
-                if (user && isMounted) {
-                    setCurrentUser(user);
-                    await fetchUserPlaylists(user.id);
-                    await fetchSavedPlaylists(user.id);
-                }
+            if (user && isMounted) {
+                setCurrentUser(user);
+                refreshUserContext(user.id);
             }
-            
-            if (isMounted) {
-              await fetchTracks(userId);
-              await fetchRooms();
-            }
-        } catch (err) {
-            console.error("Init fail", err);
-        } finally {
-            if (isMounted) setIsLoading(false);
         }
     };
-    init();
+
+    initApp();
     return () => { isMounted = false; };
-  }, [fetchTracks, fetchRooms]);
+  }, [fetchTracks, fetchRooms, refreshUserContext]);
 
   return React.createElement(StoreContext.Provider, {
     value: {
