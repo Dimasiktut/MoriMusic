@@ -9,7 +9,7 @@ import Profile from './pages/Profile';
 import Rooms from './pages/Concerts';
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
-import { Home, BarChart2, UploadCloud, User, Video, Mic, Zap, X, Loader2 } from './components/ui/Icons';
+import { Home, BarChart2, UploadCloud, User, Video, Mic, Zap, X } from './components/ui/Icons';
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
   const { t } = useStore();
