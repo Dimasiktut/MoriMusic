@@ -142,27 +142,41 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [mapTracksData]);
 
   const fetchRooms = useCallback(async () => {
-    // Simplified query to avoid join errors if relations are missing
-    const { data, error } = await supabase
-      .from('rooms')
-      .select('*, profiles:dj_id(username, photo_url)')
-      .eq('status', 'live')
-      .order('created_at', { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from('rooms')
+        .select('*, profiles:dj_id(username, photo_url)')
+        .eq('status', 'live')
+        .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      const mapped: Room[] = data.map((r: any) => ({
-        id: r.id,
-        title: r.title,
-        djId: r.dj_id,
-        djName: r.profiles?.username || 'DJ',
-        djAvatar: r.profiles?.photo_url || '',
-        coverUrl: r.cover_url,
-        startTime: r.created_at,
-        status: r.status,
-        listeners: Math.floor(Math.random() * 50) + 1, 
-        currentTrack: undefined // Can be hydrated if track_id exists
-      }));
-      setRooms(mapped);
+      if (error) {
+        // PGRST116 means relation does not exist
+        if (error.code === 'PGRST116' || error.message.includes('rooms')) {
+          console.warn("Rooms table missing. Please run the SQL migration.");
+          setRooms([]);
+          return;
+        }
+        throw error;
+      }
+
+      if (data) {
+        const mapped: Room[] = data.map((r: any) => ({
+          id: r.id,
+          title: r.title,
+          djId: r.dj_id,
+          djName: r.profiles?.username || 'DJ',
+          djAvatar: r.profiles?.photo_url || '',
+          coverUrl: r.cover_url,
+          startTime: r.created_at,
+          status: r.status,
+          listeners: Math.floor(Math.random() * 50) + 1, 
+          currentTrack: undefined
+        }));
+        setRooms(mapped);
+      }
+    } catch (e) {
+      console.error("Error fetching rooms:", e);
+      setRooms([]);
     }
   }, []);
 
@@ -195,7 +209,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (error) {
           console.error("Room creation error:", error);
-          tg?.showAlert(`Error: ${error.message}`);
+          if (error.message.includes('rooms')) {
+              tg?.showAlert("Table 'rooms' is missing in database. Please contact admin.");
+          } else {
+              tg?.showAlert(`Error: ${error.message}`);
+          }
       } else {
           await fetchRooms();
       }

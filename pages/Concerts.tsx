@@ -79,7 +79,6 @@ const Rooms: React.FC = () => {
             trackId: selectedTrackId || undefined
         });
         
-        // Only close if no error occurred in createRoom (though errors handled in store)
         setShowCreateModal(false);
         setNewRoomTitle('');
         setNewRoomCover(null);
@@ -170,7 +169,9 @@ const Rooms: React.FC = () => {
                       {rooms.length === 0 && (
                           <div className="text-center py-20 bg-zinc-900/40 rounded-[2.5rem] border border-dashed border-white/5">
                               <Music size={32} className="mx-auto text-zinc-700 mb-4" />
-                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">No active sessions. Start yours!</p>
+                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-10">
+                                  No active sessions or database not set up.
+                              </p>
                           </div>
                       )}
                   </div>
