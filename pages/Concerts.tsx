@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
@@ -42,10 +41,6 @@ const Rooms: React.FC = () => {
 
   /**
    * Main Synchronization Logic
-   * 1. Set SRC
-   * 2. Load
-   * 3. Set currentTime (only when metadata ready)
-   * 4. Play
    */
   const syncPlayback = useCallback(async () => {
     if (!activeRoom?.currentTrack || !roomAudioRef.current) {
@@ -77,7 +72,6 @@ const Rooms: React.FC = () => {
         setIsSyncing(false);
     };
 
-    // If source is different, we MUST reload
     if (audio.src !== targetSrc) {
         audio.src = targetSrc;
         audio.load();
@@ -88,7 +82,6 @@ const Rooms: React.FC = () => {
         };
         audio.addEventListener('loadedmetadata', onLoaded);
     } else {
-        // Source is same, just check sync
         if (audio.readyState >= 1) {
             await applySync();
         } else {
@@ -101,12 +94,11 @@ const Rooms: React.FC = () => {
     }
   }, [activeRoom]);
 
-  // Listener's Entry Point: This MUST be triggered by a click to bypass Autoplay
+  // Listener's Entry Point: Triggered by a click to bypass Autoplay
   const handleJoinLive = async () => {
     setIsJoined(true);
     if (roomAudioRef.current) {
         try {
-            // Trigger a dummy play to "unlock" the audio element for future programmatic plays
             await roomAudioRef.current.play();
             roomAudioRef.current.pause();
             await syncPlayback();
@@ -116,7 +108,6 @@ const Rooms: React.FC = () => {
     }
   };
 
-  // 1. Subscription Effect
   useEffect(() => {
     if (!activeRoom) {
       setMessages([]);
@@ -133,7 +124,6 @@ const Rooms: React.FC = () => {
       .on('broadcast', { event: 'room_sync' }, (payload) => {
         const updates = payload.payload;
         
-        // Listeners apply updates if they already "joined" (unlocked audio)
         if (roomAudioRef.current && !isDJ && isJoined) {
             const audio = roomAudioRef.current;
             
@@ -178,7 +168,6 @@ const Rooms: React.FC = () => {
     };
   }, [activeRoom?.id, isDJ, setActiveRoom, t, isJoined]);
 
-  // 2. DJ Sync Loop (Broadcasting state)
   useEffect(() => {
     if (!activeRoom || !isDJ || !roomAudioRef.current) return;
     
@@ -194,7 +183,6 @@ const Rooms: React.FC = () => {
     return () => clearInterval(interval);
   }, [activeRoom?.id, activeRoom?.isPlaying, isDJ, updateRoomState]);
 
-  // 3. Playlists & Tracks
   useEffect(() => {
       if (selectedPlaylistId) {
           fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
@@ -208,7 +196,6 @@ const Rooms: React.FC = () => {
 
   const displayTracks = globalSearchQuery ? filteredGlobalTracks : consoleTracks;
 
-  // 4. Mic Logic
   const startMicBroadcast = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -289,7 +276,6 @@ const Rooms: React.FC = () => {
           { id: '1', userId: 0, username: 'System', text: `${t('concerts_welcome_msg')} ${roomToOpen.title}`, type: 'system', createdAt: new Date().toISOString() }
       ]);
       
-      // DJs join automatically
       if (currentUser?.id === roomToOpen.djId) {
           setIsJoined(true);
       }
@@ -405,6 +391,13 @@ const Rooms: React.FC = () => {
                                   <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setNewRoomCover(e.target.files[0]); setPreviewCover(URL.createObjectURL(e.target.files[0])); } }} />
                               </div>
                               <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none" placeholder="Room Title..." />
+                              <div className="space-y-2">
+                                  <label className="text-[10px] font-black text-zinc-600 uppercase tracking-widest px-1">{t('concerts_create_label_track')}</label>
+                                  <select value={selectedTrackId} onChange={e => setSelectedTrackId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white text-xs font-black uppercase outline-none">
+                                      <option value="">{t('concerts_create_option_none')}</option>
+                                      {myTracks.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+                                  </select>
+                              </div>
                               <button type="submit" disabled={isCreating || !newRoomTitle} className="w-full bg-sky-500 text-black py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-sky-500/20 disabled:opacity-30 flex items-center justify-center gap-3">
                                   {isCreating ? <Loader2 className="animate-spin" size={20}/> : <><Zap size={20} fill="currentColor"/> {t('concerts_create_btn')}</>}
                               </button>
@@ -420,7 +413,6 @@ const Rooms: React.FC = () => {
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
           <audio ref={roomAudioRef} className="hidden" crossOrigin="anonymous" preload="auto" />
           
-          {/* Join Overlay - Critical for bypass Autoplay */}
           {!isJoined && !isDJ && (
               <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
                   <div className="w-28 h-28 bg-sky-500 rounded-full flex items-center justify-center text-black mb-8 shadow-[0_0_50px_rgba(56,189,248,0.5)] animate-pulse">
@@ -544,9 +536,17 @@ const Rooms: React.FC = () => {
                         </div>
                         <div className="space-y-4">
                             <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Library</h3>
-                            <div className="relative">
-                                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
-                                <input type="text" value={globalSearchQuery} onChange={(e) => setGlobalSearchQuery(e.target.value)} placeholder="Search tracks..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"/>
+                            <div className="space-y-4">
+                                <div className="relative">
+                                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+                                    <input type="text" value={globalSearchQuery} onChange={(e) => setGlobalSearchQuery(e.target.value)} placeholder="Search tracks..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"/>
+                                </div>
+                                {!globalSearchQuery && (
+                                    <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white text-xs font-black uppercase outline-none">
+                                        <option value="">{t('concerts_library_placeholder')}</option>
+                                        {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                                    </select>
+                                )}
                             </div>
                             <div className="space-y-3">
                                 {displayTracks.map(track => (
