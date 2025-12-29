@@ -59,7 +59,7 @@ const Rooms: React.FC = () => {
             audio.currentTime = targetTime;
         }
         if (activeRoom.isPlaying) {
-            audio.play().catch(() => console.warn("Sync play failed"));
+            audio.play().catch(() => {});
         } else {
             audio.pause();
         }
@@ -69,39 +69,46 @@ const Rooms: React.FC = () => {
     if (audio.src !== targetSrc) {
         audio.src = targetSrc;
         audio.load();
-        audio.addEventListener('loadedmetadata', applySync, { once: true });
+        audio.oncanplay = () => {
+            applySync();
+            audio.oncanplay = null;
+        };
     } else {
         applySync();
     }
   }, [activeRoom]);
 
-  // CRITICAL: Must be purely synchronous to unlock audio in Telegram
+  // CRITICAL: Purely synchronous handler to unlock audio for Telegram WebApp
   const handleJoinLive = () => {
     const audio = roomAudioRef.current;
     if (!audio) return;
     
     setIsJoined(true);
     
-    // 1. Force a play/pause to "unlock" the audio element for the browser session
-    audio.play().then(() => {
-        audio.pause();
+    // 1. Initialize and resume Voice AudioContext immediately
+    if (!micAudioContextRef.current) {
+        micAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (micAudioContextRef.current.state === 'suspended') {
+        micAudioContextRef.current.resume();
+    }
+
+    // 2. Setup radio stream
+    if (activeRoom?.currentTrack) {
+        audio.src = activeRoom.currentTrack.audioUrl;
+        audio.load();
         
-        // 2. If a track is already playing in the room, start it
-        if (activeRoom?.currentTrack) {
-            audio.src = activeRoom.currentTrack.audioUrl;
-            audio.load();
-            
-            const onReady = () => {
-                audio.currentTime = activeRoom.currentProgress || 0;
-                if (activeRoom.isPlaying !== false) {
-                    audio.play().catch(e => console.error("Radio start failed", e));
-                }
-            };
-            audio.addEventListener('loadedmetadata', onReady, { once: true });
-        }
-    }).catch(e => {
-        console.error("Audio unlock failed. User interaction might have been too slow.", e);
-    });
+        audio.oncanplay = () => {
+            audio.currentTime = activeRoom.currentProgress || 0;
+            if (activeRoom.isPlaying !== false) {
+                audio.play().catch(e => console.error("Radio play blocked", e));
+            }
+            audio.oncanplay = null;
+        };
+    } else {
+        // Just unlock the tag if no track yet
+        audio.play().then(() => audio.pause()).catch(() => {});
+    }
   };
 
   useEffect(() => {
@@ -125,12 +132,11 @@ const Rooms: React.FC = () => {
             if (updates.currentTrack) {
                 audio.src = updates.currentTrack.audioUrl;
                 audio.load();
-                const onLoaded = () => {
+                audio.oncanplay = () => {
                     audio.currentTime = updates.currentProgress || 0;
                     if (updates.isPlaying !== false) audio.play().catch(() => {});
-                    audio.removeEventListener('loadedmetadata', onLoaded);
+                    audio.oncanplay = null;
                 };
-                audio.addEventListener('loadedmetadata', onLoaded);
             } else {
                 if (updates.currentProgress !== undefined) {
                     const diff = Math.abs(audio.currentTime - updates.currentProgress);
