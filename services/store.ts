@@ -340,7 +340,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const generateTrackDescription = async (title: string, genre: string) => {
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : '';
+      if (!apiKey) return '';
+      
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: `Write a short, cool description for track "${title}" (${genre}). Max 150 chars.`,
@@ -399,28 +402,51 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     if (isInitialLoadDone.current) return;
     isInitialLoadDone.current = true;
+    
     const initApp = async () => {
-        const tg = (window as any).Telegram?.WebApp;
-        const tgUserId = tg?.initDataUnsafe?.user?.id;
-        const tracksPromise = fetchTracks(tgUserId);
-        const roomsPromise = fetchRooms();
-        let authPromise = Promise.resolve();
-        if (tgUserId) {
-            authPromise = fetchUserById(tgUserId).then(async user => {
-                if (user) { setCurrentUser(user); refreshUserContext(user.id); }
-                else {
-                    const tgUser = tg.initDataUnsafe.user;
-                    try {
-                        await supabase.from('profiles').insert({ id: tgUser.id, username: tgUser.username || `user_${tgUser.id}`, first_name: tgUser.first_name, last_name: tgUser.last_name, photo_url: tgUser.photo_url || '' });
-                        const newUser = await fetchUserById(tgUser.id);
-                        if (newUser) { setCurrentUser(newUser); refreshUserContext(newUser.id); }
-                    } catch(e) {}
-                }
-            });
+        try {
+            const tg = (window as any).Telegram?.WebApp;
+            const tgUserId = tg?.initDataUnsafe?.user?.id;
+            
+            // Parallel fetch of non-critical data
+            const tracksPromise = fetchTracks(tgUserId);
+            const roomsPromise = fetchRooms();
+            
+            let authPromise = Promise.resolve();
+            if (tgUserId) {
+                authPromise = fetchUserById(tgUserId).then(async user => {
+                    if (user) { 
+                        setCurrentUser(user); 
+                        await refreshUserContext(user.id); 
+                    } else {
+                        const tgUser = tg.initDataUnsafe.user;
+                        try {
+                            await supabase.from('profiles').insert({ 
+                                id: tgUser.id, 
+                                username: tgUser.username || `user_${tgUser.id}`, 
+                                first_name: tgUser.first_name, 
+                                last_name: tgUser.last_name, 
+                                photo_url: tgUser.photo_url || '' 
+                            });
+                            const newUser = await fetchUserById(tgUser.id);
+                            if (newUser) { 
+                                setCurrentUser(newUser); 
+                                await refreshUserContext(newUser.id); 
+                            }
+                        } catch(e) {
+                            console.error("User registration failed:", e);
+                        }
+                    }
+                });
+            }
+            
+            await Promise.allSettled([tracksPromise, roomsPromise, authPromise]);
+        } catch (error) {
+            console.error("Critical app initialization error:", error);
+        } finally {
+            // Always set loading to false to avoid black screen
+            setIsLoading(false);
         }
-        await Promise.allSettled([tracksPromise, roomsPromise]);
-        setIsLoading(false);
-        await authPromise;
     };
     initApp();
   }, [fetchTracks, fetchRooms, refreshUserContext, fetchUserById]);
