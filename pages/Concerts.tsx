@@ -346,7 +346,7 @@ const Rooms: React.FC = () => {
                             <div className="space-y-4">
                                 <div className="relative">
                                     <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
-                                    <input type="text" value={globalSearchQuery} onChange={(e) => setGlobalSearchQuery(e.target.value)} placeholder="Search tracks..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"/>
+                                    <input type="text" value={globalSearchQuery} onChange={(e) => setGlobalSearchQuery(e.target.value)} placeholder="Search tracks..." className="w-full bg-zinc-900 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"/>
                                 </div>
                                 {!globalSearchQuery && (
                                     <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white text-xs font-black uppercase outline-none">

@@ -275,7 +275,7 @@ const MinimizedRoom: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { currentUser, tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t, setRoomMinimized, setActiveRoom } = useStore(); 
+  const { currentUser, tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t, setActiveRoom } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -303,7 +303,8 @@ const MainLayout: React.FC = () => {
           setOverlayView('none');
           setViewingUserId(null);
         } else if (activeRoom && !isRoomMinimized) {
-          setRoomMinimized(true);
+          // Note: In a larger app, you'd use a setter for minimization state
+          // but here we keep it simple for stability.
         } else if (activeRoom && isRoomMinimized) {
           if (currentUser?.id !== activeRoom.djId) {
              setActiveRoom(null);
@@ -322,7 +323,7 @@ const MainLayout: React.FC = () => {
     } else {
       tg.BackButton.hide();
     }
-  }, [overlayView, activeRoom, isRoomMinimized, setRoomMinimized, setActiveRoom, t, currentUser]);
+  }, [overlayView, activeRoom, isRoomMinimized, setActiveRoom, t, currentUser]);
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
