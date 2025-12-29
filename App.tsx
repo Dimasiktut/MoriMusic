@@ -302,9 +302,6 @@ const MainLayout: React.FC = () => {
         if (overlayView !== 'none') {
           setOverlayView('none');
           setViewingUserId(null);
-        } else if (activeRoom && !isRoomMinimized) {
-          // Note: In a larger app, you'd use a setter for minimization state
-          // but here we keep it simple for stability.
         } else if (activeRoom && isRoomMinimized) {
           if (currentUser?.id !== activeRoom.djId) {
              setActiveRoom(null);
