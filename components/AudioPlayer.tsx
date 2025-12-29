@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Track } from '../types';
 import { Play, Pause, X, Music, SkipForward, SkipBack } from './ui/Icons';
-import { useStore } from '../services/store';
+import { useStore, useVisuals } from '../services/store';
 
 interface AudioPlayerProps {
   track: Track | null;
@@ -13,7 +13,8 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile, onNext, onPrev }) => {
-  const { recordListen, setAudioIntensity } = useStore();
+  const { recordListen } = useStore();
+  const { setAudioIntensity } = useVisuals();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -31,12 +32,9 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
     }
   }, [track, setAudioIntensity]);
 
-  // Reactive Intensity Simulation
   useEffect(() => {
     const updateIntensity = () => {
       if (isPlaying) {
-        // Mocking intensity for the Aura effect
-        // In a real production app we'd use Web Audio API AnalyserNode
         const mockPulse = 0.4 + Math.random() * 0.6;
         setAudioIntensity(mockPulse);
         animationFrameRef.current = requestAnimationFrame(updateIntensity);
@@ -82,8 +80,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
   return (
     <div className="fixed bottom-[90px] left-0 right-0 px-5 pb-2 z-40 animate-in slide-in-from-bottom-10 duration-500">
       <div className="glass border border-white/10 rounded-[2.5rem] p-4 shadow-2xl flex flex-col gap-3 relative overflow-hidden">
-        
-        {/* Sky Blue Progress */}
         <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden cursor-pointer relative z-10" 
              onClick={(e) => {
                 if(!audioRef.current) return;
@@ -118,7 +114,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
           </div>
 
           <div className="flex items-center gap-4">
-             {/* Neon Blue Visualizer */}
              <div className="hidden xs:flex items-end gap-1 h-5 w-8 mr-2">
                  <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-1' : 'h-[20%]'}`}></div>
                  <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-2' : 'h-[50%]'}`}></div>

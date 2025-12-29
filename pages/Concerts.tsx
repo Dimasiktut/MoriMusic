@@ -1,26 +1,25 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useStore } from '../services/store';
+import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
 import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
-  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, setAudioIntensity, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks, tracks } = useStore();
+  const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks, tracks } = useStore();
+  const { setAudioIntensity } = useVisuals();
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [roomTab, setRoomTab] = useState<'chat' | 'console'>('chat');
   
-  // Create Modal State
   const [newRoomTitle, setNewRoomTitle] = useState('');
   const [newRoomCover, setNewRoomCover] = useState<File | null>(null);
   const [previewCover, setPreviewCover] = useState<string | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // DJ Console State
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
   const [consoleTracks, setConsoleTracks] = useState<Track[]>([]);
   const [isMicOn, setIsMicOn] = useState(false);
@@ -28,7 +27,6 @@ const Rooms: React.FC = () => {
   const chatRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
-  // Real-time Sync & Chat
   useEffect(() => {
     if (!activeRoom) {
       setMessages([]);
@@ -42,7 +40,6 @@ const Rooms: React.FC = () => {
         setMessages(prev => [...prev, payload.payload as RoomMessage]);
       })
       .on('broadcast', { event: 'room_sync' }, (payload) => {
-        // Sync DJ state to listeners
         const updates = payload.payload;
         setActiveRoom({ ...activeRoom, ...updates });
       })
@@ -53,7 +50,6 @@ const Rooms: React.FC = () => {
     };
   }, [activeRoom, setActiveRoom]);
 
-  // DJ Audio Mixing simulation
   useEffect(() => {
     if (!activeRoom) return;
     const interval = setInterval(() => {
@@ -223,7 +219,6 @@ const Rooms: React.FC = () => {
       );
   }
 
-  // Active Room View
   const isDJ = currentUser?.id === activeRoom.djId;
 
   return (
@@ -270,7 +265,6 @@ const Rooms: React.FC = () => {
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col relative bg-black">
-               {/* View Tabs */}
                <div className="flex border-b border-white/5 bg-zinc-950 px-5">
                    <button onClick={() => setRoomTab('chat')} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] relative ${roomTab === 'chat' ? 'text-sky-400' : 'text-zinc-600'}`}>
                        Radio Chat
@@ -307,7 +301,6 @@ const Rooms: React.FC = () => {
                    </div>
                ) : (
                    <div className="flex-1 flex flex-col overflow-y-auto p-6 space-y-8 bg-zinc-950 no-scrollbar pb-32">
-                        {/* Mic Control */}
                         <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6 flex items-center justify-between">
                             <div>
                                 <h3 className="text-white font-black uppercase italic tracking-tighter text-xl">On Air Mic</h3>
@@ -318,7 +311,6 @@ const Rooms: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* Music Library Selector */}
                         <div className="space-y-4">
                             <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
                             <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
