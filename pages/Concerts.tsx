@@ -42,8 +42,8 @@ const Rooms: React.FC = () => {
 
   const isDJ = activeRoom && currentUser?.id === activeRoom.djId;
 
-  // Manual Sync Trigger
-  const syncPlayback = useCallback(async () => {
+  // Manual Sync Logic
+  const syncPlayback = useCallback(() => {
     if (!activeRoom?.currentTrack || !roomAudioRef.current) {
         setIsSyncing(false);
         return;
@@ -53,49 +53,50 @@ const Rooms: React.FC = () => {
     const audio = roomAudioRef.current;
     const targetSrc = activeRoom.currentTrack.audioUrl;
     
-    const applySync = () => {
+    if (audio.src !== targetSrc) {
+        audio.src = targetSrc;
+        audio.load();
+    }
+
+    const onLoaded = () => {
         const targetTime = activeRoom.currentProgress || 0;
-        if (Math.abs(audio.currentTime - targetTime) > 2) {
-            audio.currentTime = targetTime;
-        }
+        audio.currentTime = targetTime;
         if (activeRoom.isPlaying) {
-            audio.play().catch(() => console.warn("Sync play blocked"));
+            audio.play().catch(() => console.warn("Sync play failed"));
         } else {
             audio.pause();
         }
         setIsSyncing(false);
+        audio.removeEventListener('loadedmetadata', onLoaded);
     };
 
-    if (audio.src !== targetSrc) {
-        audio.src = targetSrc;
-        audio.load();
-        audio.oncanplay = () => {
-            applySync();
-            audio.oncanplay = null;
-        };
+    if (audio.readyState >= 1) {
+        onLoaded();
     } else {
-        applySync();
+        audio.addEventListener('loadedmetadata', onLoaded);
     }
   }, [activeRoom]);
 
-  // CRITICAL: Join handler must be fast and direct
+  // CRITICAL: Must be purely synchronous to unlock audio in Telegram
   const handleJoinLive = () => {
+    if (!roomAudioRef.current || !activeRoom?.currentTrack) return;
+    
     setIsJoined(true);
     const audio = roomAudioRef.current;
-    if (audio && activeRoom?.currentTrack) {
-        // Set properties immediately in the click event stack
-        audio.src = activeRoom.currentTrack.audioUrl;
+    
+    // Unlock and sync in one go
+    audio.src = activeRoom.currentTrack.audioUrl;
+    audio.load();
+    
+    const startPlay = () => {
         audio.currentTime = activeRoom.currentProgress || 0;
-        
-        // Telegram/Safari policy requires immediate .play() call
-        const playPromise = audio.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(error => {
-                console.error("Playback failed even with interaction:", error);
-                // Fallback: the UI is already 'joined', syncPlayback will try again on next update
-            });
+        if (activeRoom.isPlaying !== false) {
+            audio.play().catch(e => console.error("Immediate play failed", e));
         }
-    }
+        audio.removeEventListener('loadedmetadata', startPlay);
+    };
+    
+    audio.addEventListener('loadedmetadata', startPlay);
   };
 
   useEffect(() => {
@@ -119,11 +120,12 @@ const Rooms: React.FC = () => {
             if (updates.currentTrack) {
                 audio.src = updates.currentTrack.audioUrl;
                 audio.load();
-                audio.oncanplay = () => {
+                const onLoaded = () => {
                     audio.currentTime = updates.currentProgress || 0;
                     if (updates.isPlaying !== false) audio.play().catch(() => {});
-                    audio.oncanplay = null;
+                    audio.removeEventListener('loadedmetadata', onLoaded);
                 };
+                audio.addEventListener('loadedmetadata', onLoaded);
             } else {
                 if (updates.currentProgress !== undefined) {
                     const diff = Math.abs(audio.currentTime - updates.currentProgress);
@@ -166,7 +168,7 @@ const Rooms: React.FC = () => {
             isPlaying: !roomAudioRef.current.paused 
         });
       }
-    }, 4000); 
+    }, 3000); 
     
     return () => clearInterval(interval);
   }, [activeRoom?.id, activeRoom?.isPlaying, isDJ, updateRoomState]);
@@ -178,7 +180,7 @@ const Rooms: React.FC = () => {
   }, [selectedPlaylistId, fetchPlaylistTracks]);
 
   const displayTracks = globalSearchQuery 
-    ? tracks.filter(t => t.title.toLowerCase().includes(globalSearchQuery.toLowerCase())).slice(0, 10) 
+    ? tracks.filter(t => t.title.toLowerCase().includes(globalSearchQuery.toLowerCase())).slice(0, 15) 
     : consoleTracks;
 
   const startMicBroadcast = async () => {
@@ -210,7 +212,7 @@ const Rooms: React.FC = () => {
       if (isMicOn && activeRoom && isDJ) startMicBroadcast();
       else if (mediaRecorderRef.current) {
           mediaRecorderRef.current.stop();
-          mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+          mediaRecorderRef.current.stream.getTracks().forEach(tr => tr.stop());
           mediaRecorderRef.current = null;
       }
   }, [isMicOn, activeRoom?.id, isDJ]);
@@ -228,7 +230,7 @@ const Rooms: React.FC = () => {
               source.connect(micAudioContextRef.current.destination);
               source.onended = () => { isPlayingMicRef.current = false; playNextMicChunk(); };
               source.start();
-              setAudioIntensity(0.6);
+              setAudioIntensity(0.7);
           } catch (err) {
               isPlayingMicRef.current = false;
               playNextMicChunk();
