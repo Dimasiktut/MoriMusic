@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -58,6 +59,7 @@ interface StoreContextType {
   createRoom: (data: CreateRoomData) => Promise<void>;
   deleteRoom: (roomId: string) => Promise<void>;
   fetchRooms: () => Promise<void>;
+  fetchRoomById: (roomId: string) => Promise<Room | null>;
   sendRoomMessage: (roomId: string, message: Partial<RoomMessage>) => Promise<void>;
   updateRoomState: (roomId: string, updates: Partial<Room>) => Promise<void>;
   donateToRoom: () => Promise<boolean>;
@@ -207,6 +209,39 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setRooms(mapped);
       }
     } catch (e: any) {}
+  }, [mapTracksData]);
+
+  const fetchRoomById = useCallback(async (roomId: string): Promise<Room | null> => {
+    try {
+        const { data, error } = await supabase
+            .from('rooms')
+            .select(`
+              *, 
+              profiles:dj_id(username, photo_url),
+              tracks:track_id(*, profiles:uploader_id(username, photo_url), track_likes(count))
+            `)
+            .eq('id', roomId)
+            .single();
+
+        if (data && !error) {
+            return {
+                id: data.id, 
+                title: data.title, 
+                djId: data.dj_id,
+                djName: data.profiles?.username || 'DJ',
+                djAvatar: data.profiles?.photo_url || '',
+                coverUrl: data.cover_url, 
+                startTime: data.created_at,
+                status: data.status, 
+                listeners: data.listeners_count || 1, 
+                isMicActive: !!data.is_mic_active,
+                isPlaying: data.is_playing || false,
+                currentProgress: data.current_progress || 0,
+                currentTrack: data.tracks ? mapTracksData([data.tracks], [])[0] : undefined
+            };
+        }
+    } catch (e) {}
+    return null;
   }, [mapTracksData]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
@@ -404,7 +439,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getChartTracks: async () => { const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').order('plays', { ascending: false }).limit(20); return mapTracksData(data || [], []); },
     getLikedTracks: async (uid) => { const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', uid); if (!likes?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', likes.map(l => l.track_id)); return mapTracksData(data || [], likes.map(l => l.track_id)); },
     getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
-    createRoom, deleteRoom, fetchRooms, 
+    createRoom, deleteRoom, fetchRooms, fetchRoomById,
     sendRoomMessage: async (rid, msg) => { await supabase.channel(`room:${rid}`).send({ type: 'broadcast', event: 'message', payload: msg }); },
     updateRoomState: async (rid, up) => { 
         const db: any = {}; 
@@ -425,7 +460,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActiveRoom(prev => prev?.id === rid ? { ...prev, ...up } : prev); 
     },
     donateToRoom: async () => true
-  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, mapTracksData, deleteTrack, fetchRooms, setActiveRoom]);
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, mapTracksData, deleteTrack, fetchRooms, fetchRoomById, setActiveRoom]);
 
   return React.createElement(
     StoreContext.Provider,
