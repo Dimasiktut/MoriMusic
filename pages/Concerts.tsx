@@ -42,6 +42,36 @@ const Rooms: React.FC = () => {
 
   const isDJ = activeRoom && currentUser?.id === activeRoom.djId;
 
+  // Safe play helper to handle "interrupted" errors
+  const safePlay = async (audio: HTMLAudioElement) => {
+    try {
+      if (audio.readyState >= 2) { // HAVE_CURRENT_DATA or better
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          await playPromise;
+        }
+      } else {
+        // Wait for enough data
+        return new Promise<void>((resolve, reject) => {
+          const onCanPlay = () => {
+            audio.play().then(resolve).catch(reject);
+            audio.removeEventListener('canplay', onCanPlay);
+          };
+          audio.addEventListener('canplay', onCanPlay);
+          // Safety timeout
+          setTimeout(() => {
+            audio.removeEventListener('canplay', onCanPlay);
+            reject(new Error("Playback timeout"));
+          }, 5000);
+        });
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.warn("Playback error:", err);
+      }
+    }
+  };
+
   // Manual Sync Logic
   const syncPlayback = useCallback(() => {
     if (!activeRoom?.currentTrack || !roomAudioRef.current) {
@@ -52,68 +82,59 @@ const Rooms: React.FC = () => {
     setIsSyncing(true);
     const audio = roomAudioRef.current;
     const targetSrc = activeRoom.currentTrack.audioUrl;
+    const targetTime = activeRoom.currentProgress || 0;
     
-    const applySync = () => {
-        const targetTime = activeRoom.currentProgress || 0;
-        if (Math.abs(audio.currentTime - targetTime) > 2) {
-            audio.currentTime = targetTime;
-        }
-        if (activeRoom.isPlaying) {
-            audio.play().catch(() => {});
-        } else {
-            audio.pause();
-        }
-        setIsSyncing(false);
-    };
-
     if (audio.src !== targetSrc) {
         audio.pause();
         audio.src = targetSrc;
         audio.load();
-        audio.oncanplay = () => {
-            applySync();
-            audio.oncanplay = null;
-        };
+        audio.currentTime = targetTime;
+        if (activeRoom.isPlaying) safePlay(audio).finally(() => setIsSyncing(false));
+        else setIsSyncing(false);
     } else {
-        applySync();
+        if (Math.abs(audio.currentTime - targetTime) > 3) {
+            audio.currentTime = targetTime;
+        }
+        if (activeRoom.isPlaying) safePlay(audio).finally(() => setIsSyncing(false));
+        else {
+            audio.pause();
+            setIsSyncing(false);
+        }
     }
   }, [activeRoom]);
 
-  // CRITICAL: Handlers for unlocking audio must be strictly synchronous
+  // CRITICAL: Purely synchronous first step to establish trust context
   const handleJoinLive = () => {
     const audio = roomAudioRef.current;
     if (!audio) return;
     
-    // 1. Immediately resume/create mic audio context in user gesture stack
-    if (!micAudioContextRef.current) {
-        micAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    micAudioContextRef.current.resume().catch(() => {});
-
-    // 2. Set joined state
-    setIsJoined(true);
-    
-    // 3. Start Radio Playback synchronously if track exists
-    if (activeRoom?.currentTrack) {
-        // Stop current to prevent interruption error
+    // 1. Establish Audio Trust immediately
+    audio.play().then(() => {
         audio.pause();
-        audio.src = activeRoom.currentTrack.audioUrl;
-        audio.load();
         
-        // Listeners for mobile/webview compatibility
-        const onReadyToRadio = () => {
+        // 2. Resume voice context
+        if (!micAudioContextRef.current) {
+            micAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        micAudioContextRef.current.resume().catch(() => {});
+
+        // 3. Mark as joined
+        setIsJoined(true);
+        
+        // 4. Start Radio Stream if exists
+        if (activeRoom?.currentTrack) {
+            audio.src = activeRoom.currentTrack.audioUrl;
+            audio.load();
             audio.currentTime = activeRoom.currentProgress || 0;
             if (activeRoom.isPlaying !== false) {
-                const p = audio.play();
-                if (p !== undefined) p.catch(e => console.warn("Radio sync failed:", e));
+                safePlay(audio);
             }
-            audio.removeEventListener('canplay', onReadyToRadio);
-        };
-        audio.addEventListener('canplay', onReadyToRadio);
-    } else {
-        // If no track yet, just warm up the audio tag
-        audio.play().then(() => audio.pause()).catch(() => {});
-    }
+        }
+    }).catch(e => {
+        console.error("Critical: User gesture lost. Retrying...", e);
+        // Fallback: just join UI, playback might be blocked until another tap
+        setIsJoined(true);
+    });
   };
 
   useEffect(() => {
@@ -138,18 +159,15 @@ const Rooms: React.FC = () => {
                 audio.pause();
                 audio.src = updates.currentTrack.audioUrl;
                 audio.load();
-                audio.oncanplay = () => {
-                    audio.currentTime = updates.currentProgress || 0;
-                    if (updates.isPlaying !== false) audio.play().catch(() => {});
-                    audio.oncanplay = null;
-                };
+                audio.currentTime = updates.currentProgress || 0;
+                if (updates.isPlaying !== false) safePlay(audio);
             } else {
                 if (updates.currentProgress !== undefined) {
                     const diff = Math.abs(audio.currentTime - updates.currentProgress);
-                    if (diff > 4) audio.currentTime = updates.currentProgress;
+                    if (diff > 5) audio.currentTime = updates.currentProgress;
                 }
                 if (updates.isPlaying === true) {
-                    audio.play().catch(() => {});
+                    safePlay(audio);
                 } else if (updates.isPlaying === false) {
                     audio.pause();
                 }
@@ -295,14 +313,14 @@ const Rooms: React.FC = () => {
       roomAudioRef.current.src = track.audioUrl;
       roomAudioRef.current.currentTime = 0;
       roomAudioRef.current.load();
-      roomAudioRef.current.play().catch(() => {});
+      safePlay(roomAudioRef.current);
       updateRoomState(activeRoom.id, { currentTrack: track, isPlaying: true, currentProgress: 0 });
   };
 
   const togglePlayback = () => {
       if (!activeRoom || !isDJ || !roomAudioRef.current) return;
       const newState = !activeRoom.isPlaying;
-      if (newState) roomAudioRef.current.play().catch(() => {});
+      if (newState) safePlay(roomAudioRef.current);
       else roomAudioRef.current.pause();
       updateRoomState(activeRoom.id, { isPlaying: newState, currentProgress: roomAudioRef.current.currentTime });
   };
