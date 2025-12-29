@@ -276,7 +276,7 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setForceLoad(true);
-    }, 3000);
+    }, 4500); // Increased safety timeout
     return () => clearTimeout(timer);
   }, []);
 
@@ -371,7 +371,8 @@ const MainLayout: React.FC = () => {
         default: return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       }
     } catch (e) {
-      return <div className="p-20 text-center text-red-500 font-bold uppercase tracking-widest">Component Error</div>;
+      console.error("Layout Render Error:", e);
+      return <div className="p-20 text-center text-red-500 font-bold uppercase tracking-widest">Layout Error</div>;
     }
   };
 

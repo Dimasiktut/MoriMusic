@@ -3,8 +3,8 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 
-// Global error listener to debug "black screen" issues in TWA
-window.onerror = (message, source, lineno, colno, error) => {
+// Global error listener to debug issues in TWA and satisfy TS rules
+window.onerror = (message, _source, _lineno, _colno, _error) => {
   const rootElement = document.getElementById('root');
   if (rootElement) {
     rootElement.innerHTML = `
@@ -49,7 +49,7 @@ const renderApp = () => {
     console.error("Critical render error:", error);
     rootElement.innerHTML = `
       <div style="color:white; padding:40px; text-align:center; font-family:sans-serif; background:#000; height:100vh; display:flex; flex-direction:column; justify-content:center;">
-        <h2 style="color:#38bdf8; font-weight:900; font-style:italic;">MORI BOOT ERROR</h2>
+        <h2 style="color:#38bdf8; font-weight:900; font-style:italic;">BOOT ERROR</h2>
         <p style="font-size:11px; color:#666; margin-top:20px; font-family:monospace;">${String(error)}</p>
         <button onclick="window.location.reload()" style="margin-top:20px; background:#38bdf8; border:none; padding:12px 24px; border-radius:12px; font-weight:900; color:black; text-transform:uppercase;">Reload</button>
       </div>
@@ -57,7 +57,12 @@ const renderApp = () => {
   }
 };
 
-// Start
+// Start initialization
 initTelegram();
-// Small delay to ensure TWA environment is settled
-setTimeout(renderApp, 50);
+
+// Small timeout to ensure the DOM and TWA environment are fully ready
+if (document.readyState === 'complete') {
+  renderApp();
+} else {
+  window.addEventListener('load', renderApp);
+}
