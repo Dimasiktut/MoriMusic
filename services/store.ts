@@ -85,17 +85,19 @@ export const useVisuals = () => {
   return context;
 };
 
+// Fix: Change React.Node to React.ReactNode as Node does not exist in React namespace
 const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [audioIntensity, setAudioIntensity] = useState(0);
   const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
   return React.createElement(VisualContext.Provider, { value: value }, children);
 };
 
+// Fix: Change React.Node to React.ReactNode as Node does not exist in React namespace
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
-  const [savedPlaylists] = useState<Playlist[]>([]);
+  const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [isRoomMinimized, setRoomMinimized] = useState(false);
@@ -232,17 +234,108 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) { return null; }
   }, []);
 
+  const fetchUserPlaylists = useCallback(async (userId: number): Promise<Playlist[]> => {
+    const { data, error } = await supabase.from('playlists').select('*').eq('user_id', userId);
+    if (error) return [];
+    return data.map(p => ({
+      id: p.id,
+      userId: p.user_id,
+      title: p.title,
+      coverUrl: p.cover_url,
+      createdAt: p.created_at
+    }));
+  }, []);
+
+  const toggleLike = async (trackId: string) => {
+    if (!currentUser) return;
+    const isLiked = tracks.find(t => t.id === trackId)?.isLikedByCurrentUser;
+    
+    // Optimistic Update
+    setTracks(prev => prev.map(t => 
+      t.id === trackId 
+        ? { ...t, isLikedByCurrentUser: !isLiked, likes: t.likes + (isLiked ? -1 : 1) } 
+        : t
+    ));
+
+    if (isLiked) {
+      await supabase.from('track_likes').delete().eq('user_id', currentUser.id).eq('track_id', trackId);
+    } else {
+      await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
+    }
+  };
+
+  const createPlaylist = async (title: string) => {
+    if (!currentUser) return;
+    const { data, error } = await supabase.from('playlists').insert({
+      user_id: currentUser.id,
+      title: title
+    }).select().single();
+    if (!error && data) {
+      const newP: Playlist = { id: data.id, userId: data.user_id, title: data.title, createdAt: data.created_at };
+      setMyPlaylists(prev => [newP, ...prev]);
+    }
+  };
+
+  const addToPlaylist = async (trackId: string, playlistId: string) => {
+    await supabase.from('playlist_tracks').upsert({
+      playlist_id: playlistId,
+      track_id: trackId
+    });
+  };
+
+  const recordListen = async (trackId: string) => {
+    if (!currentUser) return;
+    // Increment track play count
+    await supabase.rpc('increment_play_count', { track_row_id: trackId });
+    // Add to user history
+    await supabase.from('user_history').upsert({
+      user_id: currentUser.id,
+      track_id: trackId,
+      played_at: new Date().toISOString()
+    });
+  };
+
+  const getUserHistory = useCallback(async (userId: number): Promise<Track[]> => {
+    const { data, error } = await supabase
+      .from('user_history')
+      .select('*, tracks(*, profiles:uploader_id(username, photo_url), track_likes(count))')
+      .eq('user_id', userId)
+      .order('played_at', { ascending: false })
+      .limit(20);
+    
+    if (error || !data) return [];
+    const trackData = data.map(d => d.tracks).filter(Boolean);
+    
+    let userLikes: string[] = [];
+    const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', userId);
+    if (likes) userLikes = likes.map(l => l.track_id);
+    
+    return mapTracksData(trackData, userLikes);
+  }, [mapTracksData]);
+
+  const getLikedTracks = useCallback(async (userId: number): Promise<Track[]> => {
+    const { data, error } = await supabase
+      .from('track_likes')
+      .select('track_id, tracks(*, profiles:uploader_id(username, photo_url), track_likes(count))')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (error || !data) return [];
+    const trackData = data.map(d => d.tracks).filter(Boolean);
+    return mapTracksData(trackData, [ ...trackData.map((t:any) => t.id) ]);
+  }, [mapTracksData]);
+
   const refreshUserContext = useCallback(async (userId: number) => {
     try {
       const [{ data: likesData }, { data: plData }] = await Promise.all([
         supabase.from('track_likes').select('track_id').eq('user_id', userId),
-        supabase.from('playlists').select('*').eq('user_id', userId)
+        fetchUserPlaylists(userId)
       ]);
       const userLikes = likesData?.map(l => l.track_id) || [];
       setTracks(prev => prev.map(trk => ({ ...trk, isLikedByCurrentUser: userLikes.includes(trk.id) })));
-      if (plData) setMyPlaylists(plData.map(p => ({ id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at })));
+      if (plData) setMyPlaylists(plData);
     } catch (e) {}
-  }, []);
+  }, [fetchUserPlaylists]);
 
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
     try {
@@ -262,7 +355,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (isInitialLoadDone.current) return;
     isInitialLoadDone.current = true;
     
-    // Safety timeout to hide loader no matter what
     const safetyTimer = setTimeout(() => setIsLoading(false), 8000);
 
     const initApp = async () => {
@@ -306,11 +398,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const value = useMemo(() => ({
     currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, setActiveRoom, setRoomMinimized, isLoading, language, setLanguage, t,
     uploadTrack: async () => {}, uploadAlbum: async () => {}, generateTrackDescription,
-    createPlaylist: async () => {}, addToPlaylist: async () => {}, fetchUserPlaylists: async () => [], fetchSavedPlaylists: async () => [], toggleSavePlaylist: async () => {}, fetchPlaylistTracks: async () => [],
-    deleteTrack: async () => {}, downloadTrack: async () => {}, toggleLike: async () => {}, addComment: async () => {}, recordListen: async () => {}, updateProfile: async () => {}, uploadImage: async () => '',
-    fetchUserById, getChartTracks: async () => [], getLikedTracks: async () => [], getUserHistory: async () => [], createRoom: async () => {}, deleteRoom: async () => {}, fetchRooms, fetchRoomById: async () => null,
+    createPlaylist, addToPlaylist, fetchUserPlaylists, fetchSavedPlaylists: async () => [], toggleSavePlaylist: async () => {}, fetchPlaylistTracks: async () => [],
+    deleteTrack: async () => {}, downloadTrack: async () => {}, toggleLike, addComment: async () => {}, recordListen, updateProfile: async () => {}, uploadImage: async () => '',
+    fetchUserById, getChartTracks: async () => [], getLikedTracks, getUserHistory, createRoom: async () => {}, deleteRoom: async () => {}, fetchRooms, fetchRoomById: async () => null,
     sendRoomMessage: async () => {}, updateRoomState: async () => {}, donateToRoom: async () => true
-  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, fetchRooms, fetchUserById, generateTrackDescription, setActiveRoom, setRoomMinimized]);
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, fetchRooms, fetchUserById, generateTrackDescription, setActiveRoom, setRoomMinimized, toggleLike, recordListen, getLikedTracks, getUserHistory, fetchUserPlaylists]);
 
   return React.createElement(
     StoreContext.Provider,
