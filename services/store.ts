@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -30,7 +29,7 @@ interface StoreContextType {
   rooms: Room[];
   activeRoom: Room | null;
   isRoomMinimized: boolean;
-  setActiveRoom: (room: Room | null) => void;
+  setActiveRoom: React.Dispatch<React.SetStateAction<Room | null>>;
   setRoomMinimized: (v: boolean) => void;
   isLoading: boolean;
   language: Language;
@@ -409,7 +408,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             payload: up
         });
         
-        if (activeRoom?.id === rid) setActiveRoom({ ...activeRoom, ...up }); 
+        setActiveRoom(prev => prev?.id === rid ? { ...prev, ...up } : prev); 
     },
     donateToRoom: async () => true
   }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, mapTracksData, deleteTrack, fetchRooms, setActiveRoom]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause } from '../components/ui/Icons';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
@@ -48,7 +48,7 @@ const Rooms: React.FC = () => {
       })
       .on('broadcast', { event: 'room_sync' }, (payload) => {
         const updates = payload.payload;
-        setActiveRoom(prev => prev ? { ...prev, ...updates } : null);
+        setActiveRoom((prev: Room | null) => prev ? { ...prev, ...updates } : null);
         
         // Music Sync Logic for Listeners
         if (updates.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
@@ -74,17 +74,24 @@ const Rooms: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeRoom?.id, currentUser?.id]);
+  }, [activeRoom?.id, currentUser?.id, setActiveRoom, t]);
 
   // 2. Initial Playback Sync
   useEffect(() => {
       if (activeRoom?.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
           roomAudioRef.current.src = activeRoom.currentTrack.audioUrl;
-          roomAudioRef.current.play().catch(e => console.log("User interaction needed for audio"));
+          roomAudioRef.current.play().catch(() => console.log("User interaction needed for audio"));
       }
-  }, [activeRoom?.id]);
+  }, [activeRoom?.id, currentUser?.id]);
 
-  // 3. Mic Capture (For DJ)
+  // 3. DJ Console - Fetch Playlist Tracks
+  useEffect(() => {
+      if (selectedPlaylistId) {
+          fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
+      }
+  }, [selectedPlaylistId, fetchPlaylistTracks]);
+
+  // 4. Mic Capture (For DJ)
   useEffect(() => {
       if (isMicOn && activeRoom && currentUser?.id === activeRoom.djId) {
           startMicBroadcast();
@@ -92,12 +99,11 @@ const Rooms: React.FC = () => {
           stopMicBroadcast();
       }
       return () => stopMicBroadcast();
-  }, [isMicOn]);
+  }, [isMicOn, activeRoom?.id, currentUser?.id]);
 
   const startMicBroadcast = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          // Note: MIME type 'audio/webm;codecs=opus' is common but may vary by browser
           const recorder = new MediaRecorder(stream);
           mediaRecorderRef.current = recorder;
           
@@ -116,8 +122,8 @@ const Rooms: React.FC = () => {
               }
           };
           recorder.start(1000); // 1s chunks
-      } catch (e) {
-          console.error("Mic access failed", e);
+      } catch (err) {
+          console.error("Mic access failed", err);
           setIsMicOn(false);
       }
   };
@@ -139,8 +145,6 @@ const Rooms: React.FC = () => {
       const chunk = micQueueRef.current.shift();
       if (chunk) {
           try {
-              // Note: Native decodeAudioData may not work on all chunked formats without headers
-              // For a production app, we would use a more robust streaming library (e.g., opus.js)
               const buffer = await micAudioContextRef.current.decodeAudioData(chunk);
               const source = micAudioContextRef.current.createBufferSource();
               source.buffer = buffer;
@@ -151,7 +155,7 @@ const Rooms: React.FC = () => {
               };
               source.start();
               setAudioIntensity(0.5 + Math.random() * 0.5);
-          } catch (e) {
+          } catch (err) {
               isPlayingMicRef.current = false;
               playNextMicChunk();
           }
