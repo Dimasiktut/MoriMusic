@@ -84,6 +84,12 @@ export const useVisuals = () => {
   return context;
 };
 
+// Internal Visual Provider to isolate audioIntensity updates
+const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [audioIntensity, setAudioIntensity] = useState(0);
+  return React.createElement(VisualContext.Provider, { value: { audioIntensity, setAudioIntensity } }, children);
+};
+
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -93,7 +99,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [isRoomMinimized, setRoomMinimized] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [audioIntensity, setAudioIntensity] = useState(0);
   const isInitialLoadDone = useRef(false);
   
   const [language, setLanguageState] = useState<Language>(() => {
@@ -113,10 +118,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const mapTracksData = useCallback((rawTracks: any[], userLikes: string[] = []): Track[] => {
       if (!rawTracks) return [];
       return rawTracks.map((trk: any) => {
-          // Robust count checking for different Supabase responses
+          // Count mapping logic
           const likesCount = trk.track_likes?.[0]?.count ?? (trk.likes_count ?? trk.likes ?? 0);
           const commentsData = trk.comments || [];
-          const commentCount = trk.comments_count?.[0]?.count ?? (Array.isArray(commentsData) ? commentsData.length : 0);
           const playsCount = trk.plays ?? trk.play_count ?? 0;
 
           return {
@@ -281,7 +285,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const generateTrackDescription = async (title: string, genre: string) => {
     try {
-      // @google/genai Guideline: Always use {apiKey: process.env.API_KEY} when initializing GoogleGenAI.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -332,7 +335,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       let coverUrl = data.coverFile ? await uploadImage(data.coverFile, 'music', `room_covers/${currentUser.id}/${Date.now()}`) : currentUser.photoUrl || '';
       const { data: ins, error } = await supabase.from('rooms').insert({ title: data.title, dj_id: currentUser.id, cover_url: coverUrl, status: 'live', track_id: data.trackId }).select('*, profiles:dj_id(username, photo_url)').single();
-      if (ins) { const nr: Room = { id: ins.id, title: ins.title, djId: ins.dj_id, djName: ins.profiles?.username || currentUser.username, djAvatar: ins.profiles?.photo_url || currentUser.photoUrl || '', coverUrl: ins.cover_url, startTime: ins.created_at, status: ins.status, listeners: 1, isMicActive: false }; setRooms(p => [nr, ...p]); setActiveRoom(nr); }
+      if (!error && ins) { const nr: Room = { id: ins.id, title: ins.title, djId: ins.dj_id, djName: ins.profiles?.username || currentUser.username, djAvatar: ins.profiles?.photo_url || currentUser.photoUrl || '', coverUrl: ins.cover_url, startTime: ins.created_at, status: ins.status, listeners: 1, isMicActive: false }; setRooms(p => [nr, ...p]); setActiveRoom(nr); }
     } finally { setIsLoading(false); }
   };
 
@@ -375,27 +378,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     fetchUserPlaylists: async (uid) => { const { data } = await supabase.from('playlists').select('*').eq('user_id', uid); return (data || []).map((p: any) => ({ id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at })); },
     fetchSavedPlaylists: async (uid) => { const { data } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', uid); return data?.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({ id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at })) || []; },
     toggleSavePlaylist: async (pid) => { if (!currentUser) return; const isSaved = savedPlaylists.some(p => p.id === pid); if (isSaved) await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', pid); else await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: pid }); },
-    fetchPlaylistTracks: async (pid) => { const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url), track_likes(count))').eq('playlist_id', pid); return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], []); },
+    fetchPlaylistTracks: async (pid) => { const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count))').eq('playlist_id', pid); return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], []); },
     deleteTrack: async (tid) => { await supabase.from('tracks').delete().eq('id', tid); setTracks(prev => prev.filter(t => t.id !== tid)); },
     downloadTrack: async (track) => { const a = document.createElement('a'); a.href = track.audioUrl; a.download = `${track.title}.mp3`; a.click(); },
     toggleLike, addComment, recordListen, updateProfile, uploadImage, fetchUserById,
-    getChartTracks: async () => { const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').order('plays', { ascending: false }).limit(20); return mapTracksData(data || [], []); },
-    getLikedTracks: async (uid) => { const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', uid); if (!likes?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', likes.map(l => l.track_id)); return mapTracksData(data || [], likes.map(l => l.track_id)); },
-    getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
+    getChartTracks: async () => { const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').order('plays', { ascending: false }).limit(20); return mapTracksData(data || [], []); },
+    getLikedTracks: async (uid) => { const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', uid); if (!likes?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').in('id', likes.map(l => l.track_id)); return mapTracksData(data || [], likes.map(l => l.track_id)); },
+    getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
     createRoom, deleteRoom, fetchRooms, 
     sendRoomMessage: async (rid, msg) => { await supabase.channel(`room:${rid}`).send({ type: 'broadcast', event: 'message', payload: msg }); },
     updateRoomState: async (rid, up) => { const db: any = {}; if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; await supabase.from('rooms').update(db).eq('id', rid); if (activeRoom?.id === rid) setActiveRoom({ ...activeRoom, ...up }); },
     donateToRoom: async () => true
   };
 
-  // Fixed: Replaced JSX with React.createElement to fix syntax errors in a .ts file.
   return React.createElement(
     StoreContext.Provider,
     { value: value },
-    React.createElement(
-      VisualContext.Provider,
-      { value: { audioIntensity, setAudioIntensity } },
-      children
-    )
+    React.createElement(VisualProvider, null, children)
   );
 };
