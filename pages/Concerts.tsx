@@ -1,14 +1,14 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play } from '../components/ui/Icons';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
 const Rooms: React.FC = () => {
   const { rooms, currentUser, createRoom, deleteRoom, sendRoomMessage, t, activeRoom, setActiveRoom, setRoomMinimized, updateRoomState, myPlaylists, fetchPlaylistTracks, tracks } = useStore();
   const { setAudioIntensity } = useVisuals();
+  
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -24,9 +24,16 @@ const Rooms: React.FC = () => {
   const [consoleTracks, setConsoleTracks] = useState<Track[]>([]);
   const [isMicOn, setIsMicOn] = useState(false);
 
+  // Refs for audio handling
   const chatRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const roomAudioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const micAudioContextRef = useRef<AudioContext | null>(null);
+  const micQueueRef = useRef<ArrayBuffer[]>([]);
+  const isPlayingMicRef = useRef(false);
 
+  // 1. Supabase Realtime Subscription
   useEffect(() => {
     if (!activeRoom) {
       setMessages([]);
@@ -41,45 +48,121 @@ const Rooms: React.FC = () => {
       })
       .on('broadcast', { event: 'room_sync' }, (payload) => {
         const updates = payload.payload;
-        setActiveRoom({ ...activeRoom, ...updates });
+        setActiveRoom(prev => prev ? { ...prev, ...updates } : null);
+        
+        // Music Sync Logic for Listeners
+        if (updates.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
+            roomAudioRef.current.src = updates.currentTrack.audioUrl;
+            roomAudioRef.current.play().catch(() => {
+              console.log("Autoplay blocked, wait for user interaction");
+            });
+        }
+      })
+      .on('broadcast', { event: 'voice_chunk' }, (payload) => {
+          // Audio streaming logic for listeners
+          if (currentUser?.id !== activeRoom.djId) {
+              const base64 = payload.payload.chunk;
+              const binary = atob(base64);
+              const bytes = new Uint8Array(binary.length);
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+              micQueueRef.current.push(bytes.buffer);
+              playNextMicChunk();
+          }
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeRoom, setActiveRoom]);
+  }, [activeRoom?.id, currentUser?.id]);
 
+  // 2. Initial Playback Sync
   useEffect(() => {
-    if (!activeRoom) return;
-    const interval = setInterval(() => {
-        const base = activeRoom.currentTrack ? 0.4 : 0.1;
-        const micBoost = activeRoom.isMicActive ? 0.4 : 0;
-        setAudioIntensity(base + micBoost + Math.random() * 0.2);
-    }, 150);
-    return () => {
-        clearInterval(interval);
-        setAudioIntensity(0);
-    };
-  }, [activeRoom, setAudioIntensity]);
-
-  useEffect(() => {
-    if (chatRef.current) {
-        chatRef.current.scrollTop = chatRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  useEffect(() => {
-      if (selectedPlaylistId) {
-          fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
+      if (activeRoom?.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
+          roomAudioRef.current.src = activeRoom.currentTrack.audioUrl;
+          roomAudioRef.current.play().catch(e => console.log("User interaction needed for audio"));
       }
-  }, [selectedPlaylistId, fetchPlaylistTracks]);
+  }, [activeRoom?.id]);
+
+  // 3. Mic Capture (For DJ)
+  useEffect(() => {
+      if (isMicOn && activeRoom && currentUser?.id === activeRoom.djId) {
+          startMicBroadcast();
+      } else {
+          stopMicBroadcast();
+      }
+      return () => stopMicBroadcast();
+  }, [isMicOn]);
+
+  const startMicBroadcast = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          // Note: MIME type 'audio/webm;codecs=opus' is common but may vary by browser
+          const recorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = recorder;
+          
+          recorder.ondataavailable = async (e) => {
+              if (e.data.size > 0 && activeRoom) {
+                  const reader = new FileReader();
+                  reader.readAsDataURL(e.data);
+                  reader.onloadend = () => {
+                      const base64 = (reader.result as string).split(',')[1];
+                      supabase.channel(`room:${activeRoom.id}`).send({
+                          type: 'broadcast',
+                          event: 'voice_chunk',
+                          payload: { chunk: base64 }
+                      });
+                  };
+              }
+          };
+          recorder.start(1000); // 1s chunks
+      } catch (e) {
+          console.error("Mic access failed", e);
+          setIsMicOn(false);
+      }
+  };
+
+  const stopMicBroadcast = () => {
+      if (mediaRecorderRef.current) {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current.stream.getTracks().forEach(t => t.stop());
+          mediaRecorderRef.current = null;
+      }
+  };
+
+  const playNextMicChunk = async () => {
+      if (isPlayingMicRef.current || micQueueRef.current.length === 0) return;
+      
+      isPlayingMicRef.current = true;
+      if (!micAudioContextRef.current) micAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      const chunk = micQueueRef.current.shift();
+      if (chunk) {
+          try {
+              // Note: Native decodeAudioData may not work on all chunked formats without headers
+              // For a production app, we would use a more robust streaming library (e.g., opus.js)
+              const buffer = await micAudioContextRef.current.decodeAudioData(chunk);
+              const source = micAudioContextRef.current.createBufferSource();
+              source.buffer = buffer;
+              source.connect(micAudioContextRef.current.destination);
+              source.onended = () => {
+                  isPlayingMicRef.current = false;
+                  playNextMicChunk();
+              };
+              source.start();
+              setAudioIntensity(0.5 + Math.random() * 0.5);
+          } catch (e) {
+              isPlayingMicRef.current = false;
+              playNextMicChunk();
+          }
+      }
+  };
 
   const handleOpenRoom = (room: Room) => {
       setActiveRoom(room);
       setRoomMinimized(false);
       setMessages([
-          { id: '1', userId: 0, username: 'System', text: `Welcome to ${room.title}! Session live.`, type: 'system', createdAt: new Date().toISOString() }
+          { id: '1', userId: 0, username: 'System', text: `${t('concerts_welcome_msg')} ${room.title}`, type: 'system', createdAt: new Date().toISOString() }
       ]);
   };
 
@@ -95,18 +178,34 @@ const Rooms: React.FC = () => {
   const handleEndSession = async () => {
       if (activeRoom && currentUser?.id === activeRoom.djId) {
           const tg = (window as any).Telegram?.WebApp;
-          tg?.showConfirm("Are you sure you want to end the session?", async (confirmed: boolean) => {
-              if (confirmed) {
-                  await deleteRoom(activeRoom.id);
-                  setActiveRoom(null);
-                  setRoomMinimized(false);
-              }
-          });
+          const confirmText = t('track_delete_confirm') || "End session?";
+          if (tg) {
+              tg.showConfirm(confirmText, async (confirmed: boolean) => {
+                  if (confirmed) {
+                      await deleteRoom(activeRoom.id);
+                      setActiveRoom(null);
+                      setRoomMinimized(false);
+                  }
+              });
+          } else if (window.confirm(confirmText)) {
+              await deleteRoom(activeRoom.id);
+              setActiveRoom(null);
+          }
       }
   };
 
-  const handleMinimize = () => {
-      setRoomMinimized(true);
+  const toggleMic = () => {
+      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
+      const newState = !isMicOn;
+      setIsMicOn(newState);
+      updateRoomState(activeRoom.id, { isMicActive: newState });
+      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+  };
+
+  const playInRoom = (track: Track) => {
+      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
+      updateRoomState(activeRoom.id, { currentTrack: track });
+      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -127,20 +226,6 @@ const Rooms: React.FC = () => {
       setInputText('');
   };
 
-  const toggleMic = () => {
-      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
-      const newState = !isMicOn;
-      setIsMicOn(newState);
-      updateRoomState(activeRoom.id, { isMicActive: newState });
-      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('medium');
-  };
-
-  const playInRoom = (track: Track) => {
-      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
-      updateRoomState(activeRoom.id, { currentTrack: track });
-      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-  };
-
   const myTracks = tracks.filter(t => t.uploaderId === currentUser?.id);
 
   if (!activeRoom) {
@@ -149,7 +234,7 @@ const Rooms: React.FC = () => {
               <header className="flex justify-between items-start mb-8 mt-6">
                   <div>
                     <h1 className="text-3xl font-black text-white uppercase italic tracking-tighter">{t('concerts_title')}</h1>
-                    <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest mt-1">Live synchronized radio</p>
+                    <p className="text-zinc-600 text-[10px] font-black uppercase tracking-widest mt-1">{t('concerts_subtitle')}</p>
                   </div>
                   <button onClick={() => setShowCreateModal(true)} className="p-3 bg-sky-500 text-black rounded-2xl shadow-lg shadow-sky-500/20 active:scale-95 transition-all"><Plus size={24} /></button>
               </header>
@@ -177,7 +262,7 @@ const Rooms: React.FC = () => {
                       {rooms.length === 0 && (
                           <div className="text-center py-20 bg-zinc-900/40 rounded-[2.5rem] border border-dashed border-white/5">
                               <Music size={32} className="mx-auto text-zinc-700 mb-4" />
-                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-10">No active radio sessions.</p>
+                              <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest px-10">{t('concerts_empty')}</p>
                           </div>
                       )}
                   </div>
@@ -198,13 +283,9 @@ const Rooms: React.FC = () => {
                                   <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500" placeholder="Radio Name..." />
                               </div>
                               <div>
-                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">Initial Track (Optional)</label>
-                                  <select 
-                                    value={selectedTrackId} 
-                                    onChange={e => setSelectedTrackId(e.target.value)} 
-                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500 appearance-none"
-                                  >
-                                      <option value="">None / Live Mic</option>
+                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">{t('concerts_create_label_track')}</label>
+                                  <select value={selectedTrackId} onChange={e => setSelectedTrackId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none appearance-none focus:ring-1 focus:ring-sky-500">
+                                      <option value="">{t('concerts_create_option_none')}</option>
                                       {myTracks.map(track => <option key={track.id} value={track.id}>{track.title}</option>)}
                                   </select>
                               </div>
@@ -223,14 +304,16 @@ const Rooms: React.FC = () => {
 
   return (
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
+          <audio ref={roomAudioRef} className="hidden" />
+          
           <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
-              <button onClick={handleMinimize} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10">
+              <button onClick={() => setRoomMinimized(true)} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10">
                   <ArrowLeft size={24} />
               </button>
               <div className="flex items-center gap-3">
                   <div className="bg-zinc-900/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                      <span className="text-white text-[10px] font-black uppercase tracking-widest">Listeners: {activeRoom.listeners}</span>
+                      <span className="text-white text-[10px] font-black uppercase tracking-widest">{t('concerts_viewers')}: {activeRoom.listeners}</span>
                   </div>
                   {isDJ && (
                       <button onClick={handleEndSession} className="p-3 bg-red-500/20 rounded-full text-red-500 border border-red-500/20">
@@ -253,7 +336,7 @@ const Rooms: React.FC = () => {
                                 <span className="text-white font-black text-sm uppercase italic block">{activeRoom.djName}</span>
                                 <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
                                     {activeRoom.isMicActive && <Mic size={10} className="text-red-500 animate-pulse" />}
-                                    {activeRoom.currentTrack ? `ON AIR: ${activeRoom.currentTrack.title}` : 'LIVE DJ SET'}
+                                    {activeRoom.currentTrack ? `${t('concerts_on_air')}: ${activeRoom.currentTrack.title}` : 'LIVE DJ SET'}
                                 </span>
                             </div>
                        </div>
@@ -267,12 +350,12 @@ const Rooms: React.FC = () => {
           <div className="flex-1 overflow-hidden flex flex-col relative bg-black">
                <div className="flex border-b border-white/5 bg-zinc-950 px-5">
                    <button onClick={() => setRoomTab('chat')} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] relative ${roomTab === 'chat' ? 'text-sky-400' : 'text-zinc-600'}`}>
-                       Radio Chat
+                       {t('concerts_tab_chat')}
                        {roomTab === 'chat' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
                    </button>
                    {isDJ && (
                        <button onClick={() => setRoomTab('console')} className={`flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] relative ${roomTab === 'console' ? 'text-sky-400' : 'text-zinc-600'}`}>
-                           DJ Console
+                           {t('concerts_tab_console')}
                            {roomTab === 'console' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-sky-400 rounded-t-full shadow-[0_-5px_15px_rgba(56,189,248,0.4)]" />}
                        </button>
                    )}
@@ -303,8 +386,8 @@ const Rooms: React.FC = () => {
                    <div className="flex-1 flex flex-col overflow-y-auto p-6 space-y-8 bg-zinc-950 no-scrollbar pb-32">
                         <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6 flex items-center justify-between">
                             <div>
-                                <h3 className="text-white font-black uppercase italic tracking-tighter text-xl">On Air Mic</h3>
-                                <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest mt-1">Broadcast your voice live</p>
+                                <h3 className="text-white font-black uppercase italic tracking-tighter text-xl">{t('concerts_mic_title')}</h3>
+                                <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-widest mt-1">{t('concerts_mic_desc')}</p>
                             </div>
                             <button onClick={toggleMic} className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all ${isMicOn ? 'bg-red-500 text-white shadow-[0_0_20px_rgba(239,68,68,0.4)]' : 'bg-zinc-800 text-zinc-500'}`}>
                                 <Mic size={32} />
@@ -312,9 +395,9 @@ const Rooms: React.FC = () => {
                         </div>
 
                         <div className="space-y-4">
-                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
+                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> {t('concerts_library_title')}</h3>
                             <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
-                                <option value="">Select Playlist...</option>
+                                <option value="">{t('concerts_library_placeholder')}</option>
                                 {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
                             </select>
 

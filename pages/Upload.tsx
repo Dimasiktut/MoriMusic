@@ -170,7 +170,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
                         className="text-[10px] font-black uppercase flex items-center gap-1.5 text-sky-400 hover:text-sky-300 disabled:opacity-30 transition-all px-3 py-1 bg-sky-500/10 rounded-full border border-sky-500/20"
                       >
                         {isGeneratingAi ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} fill="currentColor"/>}
-                        Magic AI
+                        {t('upload_magic_ai')}
                       </button>
                   </div>
                   <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none h-32 resize-none transition-all" placeholder={t('upload_placeholder_desc')}/>

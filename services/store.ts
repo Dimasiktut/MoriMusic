@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -83,7 +84,6 @@ export const useVisuals = () => {
   return context;
 };
 
-// Internal Visual Provider to isolate high-frequency audioIntensity updates
 const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [audioIntensity, setAudioIntensity] = useState(0);
   const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
@@ -118,7 +118,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const mapTracksData = useCallback((rawTracks: any[], userLikes: string[] = []): Track[] => {
       if (!rawTracks) return [];
       return rawTracks.map((trk: any) => {
-          // Fixed count mapping logic to reliably extract counts from Supabase response
           const likesCount = trk.track_likes?.[0]?.count ?? (trk.likes_count ?? trk.likes ?? 0);
           const commentsData = trk.comments || [];
           const playsCount = trk.plays ?? trk.play_count ?? 0;
@@ -283,7 +282,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } finally { setIsLoading(false); }
   };
 
-  // Fix: Added missing deleteTrack implementation
   const deleteTrack = useCallback(async (trackId: string) => {
     if (!currentUser) return;
     try {
@@ -382,7 +380,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initApp();
   }, [fetchTracks, fetchRooms, refreshUserContext, fetchUserById]);
 
-  // Memoize context value to prevent unnecessary re-renders when high-frequency state changes elsewhere
   const value: StoreContextType = useMemo(() => ({
     currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, setActiveRoom, setRoomMinimized, isLoading, language, setLanguage, t,
     uploadTrack, uploadAlbum, generateTrackDescription, 
@@ -399,7 +396,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
     createRoom, deleteRoom, fetchRooms, 
     sendRoomMessage: async (rid, msg) => { await supabase.channel(`room:${rid}`).send({ type: 'broadcast', event: 'message', payload: msg }); },
-    updateRoomState: async (rid, up) => { const db: any = {}; if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; await supabase.from('rooms').update(db).eq('id', rid); if (activeRoom?.id === rid) setActiveRoom({ ...activeRoom, ...up }); },
+    updateRoomState: async (rid, up) => { 
+        const db: any = {}; 
+        if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; 
+        if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; 
+        await supabase.from('rooms').update(db).eq('id', rid); 
+        
+        // Broadcast updates to all listeners
+        await supabase.channel(`room:${rid}`).send({
+            type: 'broadcast',
+            event: 'room_sync',
+            payload: up
+        });
+        
+        if (activeRoom?.id === rid) setActiveRoom({ ...activeRoom, ...up }); 
+    },
     donateToRoom: async () => true
   }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, mapTracksData, deleteTrack, fetchRooms, setActiveRoom]);
 

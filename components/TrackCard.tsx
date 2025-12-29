@@ -240,7 +240,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
            <div className="mt-8 text-center">
              <h3 className="text-white font-black text-2xl uppercase italic tracking-tighter">{t('track_share')}</h3>
              <p className="text-zinc-500 text-[10px] font-black uppercase mt-2 tracking-widest opacity-60 leading-relaxed max-w-[240px]">
-               Visual card for your stories and friends
+               {t('snippet_promo')}
              </p>
            </div>
 
@@ -249,16 +249,16 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={handleDownloadSnippet} 
                 className="py-4 bg-white/5 border border-white/10 rounded-2xl text-white font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Download size={16} /> Save
+                <Download size={16} /> {t('snippet_save')}
               </button>
               <button 
                 onClick={handleShareSnippet}
                 className="py-4 bg-sky-500 rounded-2xl text-black font-black uppercase text-[10px] tracking-widest shadow-lg shadow-sky-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                <Send size={16} /> Send
+                <Send size={16} /> {t('snippet_send')}
               </button>
            </div>
-           <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">Close Preview</button>
+           <button onClick={() => setSnippetUrl(null)} className="mt-8 text-zinc-600 font-black uppercase text-[9px] tracking-[0.3em] hover:text-white transition-colors">{t('snippet_close')}</button>
         </div>
       )}
 
@@ -306,7 +306,7 @@ const TrackCard: React.FC<TrackCardProps> = ({ track, onPlay, onOpenProfile }) =
                 onClick={generateSnippet}
                 className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase text-sky-400 hover:bg-sky-500/10 flex items-center gap-3 transition-colors"
               >
-                <Zap size={16} fill="currentColor" /> Visual Snippet
+                <Zap size={16} fill="currentColor" /> {t('snippet_title')}
               </button>
               <button 
                 onClick={(e) => { e.stopPropagation(); setIsPlaylistModalOpen(true); setIsMenuOpen(false); }}

@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { 
@@ -169,12 +170,12 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                       </div>
                       <div className="mb-2">
                           <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter leading-tight">{selectedPlaylist.title}</h2>
-                          <p className="text-xs font-bold text-sky-400 uppercase tracking-widest mt-1">Playlist</p>
+                          <p className="text-xs font-bold text-sky-400 uppercase tracking-widest mt-1">{t('profile_playlists').slice(0, -1)}</p>
                       </div>
                   </div>
               </div>
               <div className="p-5 space-y-4">
-                  {loadingPlaylistTracks ? <TrackSkeleton /> : playlistTracks.length > 0 ? playlistTracks.map(track => <TrackCard key={track.id} track={track} onPlay={onPlayTrack} />) : <div className="text-center py-20 text-zinc-600 font-bold uppercase text-xs border border-dashed border-white/5 rounded-3xl">No tracks here</div>}
+                  {loadingPlaylistTracks ? <TrackSkeleton /> : playlistTracks.length > 0 ? playlistTracks.map(track => <TrackCard key={track.id} track={track} onPlay={onPlayTrack} />) : <div className="text-center py-20 text-zinc-600 font-bold uppercase text-xs border border-dashed border-white/5 rounded-3xl">{t('profile_playlist_empty')}</div>}
               </div>
           </div>
       );
@@ -250,24 +251,24 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            {profileUser.stats.uploads > 0 && (
                <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2rem] p-6 shadow-inner relative overflow-hidden">
                    <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">
-                       <TrendingUp size={14} /> Artist Hub
+                       <TrendingUp size={14} /> {t('profile_artist_hub')}
                    </div>
                    <div className="flex justify-between items-center text-center relative z-10">
-                        <div><div className="text-2xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Plays</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_plays')}</div></div>
                         <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Likes</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_likes')}</div></div>
                         <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">Tracks</div></div>
+                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_tracks')}</div></div>
                    </div>
                </div>
            )}
 
            <div className="mt-10 w-full flex border-b border-white/5 overflow-x-auto no-scrollbar">
                 {[
-                  { id: 'tracks', label: 'Tracks', icon: Music },
-                  { id: 'playlists', label: 'Playlists', icon: ListMusic },
-                  { id: 'likes', label: 'Likes', icon: Heart },
-                  ...(isOwnProfile ? [{ id: 'history', label: 'History', icon: Clock }] : [])
+                  { id: 'tracks', label: t('profile_tracks'), icon: Music },
+                  { id: 'playlists', label: t('profile_playlists'), icon: ListMusic },
+                  { id: 'likes', label: t('profile_likes'), icon: Heart },
+                  ...(isOwnProfile ? [{ id: 'history', label: t('profile_history'), icon: Clock }] : [])
                 ].map(tab => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex-1 pb-4 text-[10px] font-black uppercase tracking-widest transition-all relative flex flex-col items-center gap-2 ${activeTab === tab.id ? 'text-sky-400' : 'text-zinc-600'}`}>
                         <tab.icon size={18} />
@@ -292,8 +293,8 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                         </div>
                     </div>
                )}
-               {activeTab === 'likes' && (loadingLikes ? <TrackSkeleton /> : likedTracks.length > 0 ? likedTracks.map(t => <TrackCard key={t.id} track={t} onPlay={onPlayTrack} />) : <div className="text-center py-10 text-zinc-600 font-bold uppercase text-[10px]">No likes yet</div>)}
-               {activeTab === 'history' && (loadingHistory ? <TrackSkeleton /> : historyTracks.length > 0 ? historyTracks.map(t => <TrackCard key={t.id} track={t} onPlay={onPlayTrack} />) : <div className="text-center py-10 text-zinc-600 font-bold uppercase text-[10px]">Empty history</div>)}
+               {activeTab === 'likes' && (loadingLikes ? <TrackSkeleton /> : likedTracks.length > 0 ? likedTracks.map(t => <TrackCard key={t.id} track={t} onPlay={onPlayTrack} />) : <div className="text-center py-10 text-zinc-600 font-bold uppercase text-[10px]">{t('profile_no_tracks')}</div>)}
+               {activeTab === 'history' && (loadingHistory ? <TrackSkeleton /> : historyTracks.length > 0 ? historyTracks.map(t => <TrackCard key={t.id} track={t} onPlay={onPlayTrack} />) : <div className="text-center py-10 text-zinc-600 font-bold uppercase text-[10px]">{t('profile_history_empty')}</div>)}
            </div>
        </div>
     </div>

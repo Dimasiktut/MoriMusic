@@ -47,7 +47,7 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
 };
 
 const MinimizedRoom: React.FC = () => {
-    const { activeRoom, setRoomMinimized, deleteRoom, currentUser } = useStore();
+    const { activeRoom, setRoomMinimized, deleteRoom, currentUser, t } = useStore();
     if (!activeRoom) return null;
 
     const isDJ = currentUser?.id === activeRoom.djId;
@@ -66,7 +66,7 @@ const MinimizedRoom: React.FC = () => {
                     <span className="text-white text-[11px] font-black uppercase italic truncate">{activeRoom.title}</span>
                     <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 truncate">
                         {activeRoom.isMicActive && <Mic size={10} className="text-red-500 animate-pulse"/>}
-                        {activeRoom.currentTrack ? `Streaming: ${activeRoom.currentTrack.title}` : 'Live DJ Set'}
+                        {activeRoom.currentTrack ? `${t('concerts_streaming')}: ${activeRoom.currentTrack.title}` : 'Live DJ Set'}
                     </span>
                 </div>
             </div>
@@ -89,7 +89,7 @@ const MinimizedRoom: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading } = useStore(); 
+  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -173,7 +173,7 @@ const MainLayout: React.FC = () => {
           <div className="w-16 h-16 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin" />
           <Zap size={24} className="absolute inset-0 m-auto text-sky-400 animate-pulse" fill="currentColor" />
         </div>
-        <p className="text-sky-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">Initializing Mori</p>
+        <p className="text-sky-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">{t('app_initializing')}</p>
       </div>
     );
   }
