@@ -95,7 +95,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
-  const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
+  // Removed setSavedPlaylists to fix TS6133
+  const [savedPlaylists] = useState<Playlist[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [isRoomMinimized, setRoomMinimized] = useState(false);
@@ -122,8 +123,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (!rawTracks) return [];
       return rawTracks.map((trk: any) => {
           const likesCount = trk.track_likes?.[0]?.count ?? (trk.likes_count ?? trk.likes ?? 0);
-          const commentsData = trk.comments || [];
           const playsCount = trk.plays ?? trk.play_count ?? 0;
+          const commentsData = trk.comments || [];
 
           return {
               id: trk.id, 
@@ -325,6 +326,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const refreshUserContext = useCallback(async (userId: number) => {
     try {
+      // Corrected destructuring for plData which is a direct Playlist[] array
       const [{ data: likesData }, plData] = await Promise.all([
         supabase.from('track_likes').select('track_id').eq('user_id', userId),
         fetchUserPlaylists(userId)
@@ -332,7 +334,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const userLikes = likesData?.map(l => l.track_id) || [];
       setTracks(prev => prev.map(trk => ({ ...trk, isLikedByCurrentUser: userLikes.includes(trk.id) })));
       if (plData) setMyPlaylists(plData);
-    } catch (e) {}
+    } catch (e) {
+      console.error("Refresh context error", e);
+    }
   }, [fetchUserPlaylists]);
 
   const generateTrackDescription = useCallback(async (title: string, genre: string): Promise<string> => {
@@ -405,6 +409,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return React.createElement(
     StoreContext.Provider,
     { value: value },
-    React.createElement(VisualProvider, { children }, null)
+    React.createElement(VisualProvider, null, children)
   );
 };
