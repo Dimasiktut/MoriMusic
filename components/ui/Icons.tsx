@@ -45,7 +45,8 @@ import {
   Gift,
   Star,
   Calendar,
-  Users
+  Users,
+  Volume2
 } from 'lucide-react';
 
 export {
@@ -94,5 +95,6 @@ export {
   Gift,
   Star,
   Calendar,
-  Users
+  Users,
+  Volume2
 };
