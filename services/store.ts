@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -181,25 +180,34 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const { data, error } = await supabase
         .from('rooms')
-        .select('*, profiles:dj_id(username, photo_url)')
+        .select(`
+          *, 
+          profiles:dj_id(username, photo_url),
+          tracks:track_id(*, profiles:uploader_id(username, photo_url), track_likes(count))
+        `)
         .eq('status', 'live')
         .order('created_at', { ascending: false });
 
       if (data && !error) {
         const mapped: Room[] = data.map((r: any) => ({
-          id: r.id, title: r.title, djId: r.dj_id,
+          id: r.id, 
+          title: r.title, 
+          djId: r.dj_id,
           djName: r.profiles?.username || 'DJ',
           djAvatar: r.profiles?.photo_url || '',
-          coverUrl: r.cover_url, startTime: r.created_at,
-          status: r.status, listeners: r.listeners_count || Math.floor(Math.random() * 5) + 1, 
+          coverUrl: r.cover_url, 
+          startTime: r.created_at,
+          status: r.status, 
+          listeners: r.listeners_count || Math.floor(Math.random() * 5) + 1, 
           isMicActive: !!r.is_mic_active,
           isPlaying: r.is_playing || false,
-          currentTrack: r.tracks ? { id: r.tracks.id, title: r.tracks.title, audioUrl: r.tracks.audio_url, coverUrl: r.tracks.cover_url } : undefined
+          currentProgress: r.current_progress || 0,
+          currentTrack: r.tracks ? mapTracksData([r.tracks], [])[0] : undefined
         }));
         setRooms(mapped);
       }
     } catch (e: any) {}
-  }, []);
+  }, [mapTracksData]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
     try {
@@ -403,6 +411,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; 
         if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; 
         if (up.isPlaying !== undefined) db.is_playing = up.isPlaying;
+        if (up.currentProgress !== undefined) db.current_progress = up.currentProgress;
         
         await supabase.from('rooms').update(db).eq('id', rid); 
         
