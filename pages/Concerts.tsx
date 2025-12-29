@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play } from '../components/ui/Icons';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause, Search } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
@@ -22,6 +23,7 @@ const Rooms: React.FC = () => {
 
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>('');
   const [consoleTracks, setConsoleTracks] = useState<Track[]>([]);
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [isMicOn, setIsMicOn] = useState(false);
 
   // Refs for audio handling
@@ -48,18 +50,33 @@ const Rooms: React.FC = () => {
       })
       .on('broadcast', { event: 'room_sync' }, (payload) => {
         const updates = payload.payload;
-        setActiveRoom((prev: Room | null) => prev ? { ...prev, ...updates } : null);
-        
-        // Music Sync Logic for Listeners
-        if (updates.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
-            roomAudioRef.current.src = updates.currentTrack.audioUrl;
-            roomAudioRef.current.play().catch(() => {
-              console.log("Autoplay blocked, wait for user interaction");
-            });
-        }
+        setActiveRoom((prev: Room | null) => {
+           if (!prev) return null;
+           const newRoom = { ...prev, ...updates };
+           
+           // Sync Playback for listeners
+           if (roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
+             if (updates.currentTrack) {
+               roomAudioRef.current.src = updates.currentTrack.audioUrl;
+               // If a new track starts, reset progress
+               roomAudioRef.current.currentTime = updates.currentProgress || 0;
+             } else if (updates.currentProgress !== undefined) {
+               // Only seek if needed (e.g., if out of sync)
+               const diff = Math.abs(roomAudioRef.current.currentTime - updates.currentProgress);
+               if (diff > 2) roomAudioRef.current.currentTime = updates.currentProgress;
+             }
+
+             if (updates.isPlaying === true) {
+               roomAudioRef.current.play().catch(() => console.log("Blocked by browser policy"));
+             } else if (updates.isPlaying === false) {
+               roomAudioRef.current.pause();
+             }
+           }
+           
+           return newRoom;
+        });
       })
       .on('broadcast', { event: 'voice_chunk' }, (payload) => {
-          // Audio streaming logic for listeners
           if (currentUser?.id !== activeRoom.djId) {
               const base64 = payload.payload.chunk;
               const binary = atob(base64);
@@ -76,22 +93,50 @@ const Rooms: React.FC = () => {
     };
   }, [activeRoom?.id, currentUser?.id, setActiveRoom, t]);
 
-  // 2. Initial Playback Sync
+  // 2. Initial Sync on join
   useEffect(() => {
       if (activeRoom?.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
           roomAudioRef.current.src = activeRoom.currentTrack.audioUrl;
-          roomAudioRef.current.play().catch(() => console.log("User interaction needed for audio"));
+          if (activeRoom.currentProgress) {
+              roomAudioRef.current.currentTime = activeRoom.currentProgress;
+          }
+          if (activeRoom.isPlaying) {
+            roomAudioRef.current.play().catch(() => {
+                // Browsers often block autoplay on join without interaction
+                console.warn("Autoplay blocked. User needs to interact with the page first.");
+            });
+          }
       }
   }, [activeRoom?.id, currentUser?.id]);
 
-  // 3. DJ Console - Fetch Playlist Tracks
+  // Sync progress occasionally if DJ (broadcasting current time)
+  useEffect(() => {
+    if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
+    
+    const interval = setInterval(() => {
+      if (roomAudioRef.current && activeRoom.isPlaying) {
+        updateRoomState(activeRoom.id, { currentProgress: roomAudioRef.current.currentTime });
+      }
+    }, 5000); // sync every 5 seconds
+    
+    return () => clearInterval(interval);
+  }, [activeRoom?.id, activeRoom?.isPlaying, currentUser?.id, updateRoomState]);
+
+  // 3. DJ Console - Tracks Logic
   useEffect(() => {
       if (selectedPlaylistId) {
           fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
       }
   }, [selectedPlaylistId, fetchPlaylistTracks]);
 
-  // 4. Mic Capture (For DJ)
+  const filteredGlobalTracks = tracks.filter(t => 
+    t.title.toLowerCase().includes(globalSearchQuery.toLowerCase()) || 
+    t.uploaderName.toLowerCase().includes(globalSearchQuery.toLowerCase())
+  ).slice(0, 15);
+
+  const displayTracks = globalSearchQuery ? filteredGlobalTracks : consoleTracks;
+
+  // 4. Mic Capture
   useEffect(() => {
       if (isMicOn && activeRoom && currentUser?.id === activeRoom.djId) {
           startMicBroadcast();
@@ -121,7 +166,7 @@ const Rooms: React.FC = () => {
                   };
               }
           };
-          recorder.start(1000); // 1s chunks
+          recorder.start(1000); 
       } catch (err) {
           console.error("Mic access failed", err);
           setIsMicOn(false);
@@ -207,9 +252,28 @@ const Rooms: React.FC = () => {
   };
 
   const playInRoom = (track: Track) => {
-      if (!activeRoom || currentUser?.id !== activeRoom.djId) return;
-      updateRoomState(activeRoom.id, { currentTrack: track });
+      if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
+      
+      // Update local DJ audio
+      roomAudioRef.current.src = track.audioUrl;
+      roomAudioRef.current.currentTime = 0;
+      roomAudioRef.current.play();
+      
+      updateRoomState(activeRoom.id, { currentTrack: track, isPlaying: true, currentProgress: 0 });
       if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+  };
+
+  const togglePlayback = () => {
+      if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
+      const newState = !activeRoom.isPlaying;
+      
+      if (newState) {
+        roomAudioRef.current.play();
+      } else {
+        roomAudioRef.current.pause();
+      }
+      
+      updateRoomState(activeRoom.id, { isPlaying: newState, currentProgress: roomAudioRef.current.currentTime });
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -308,7 +372,8 @@ const Rooms: React.FC = () => {
 
   return (
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
-          <audio ref={roomAudioRef} className="hidden" />
+          {/* Audio element moved inside the room to maintain scope */}
+          <audio ref={roomAudioRef} className="hidden" crossOrigin="anonymous" />
           
           <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
               <button onClick={() => setRoomMinimized(true)} className="p-3 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10">
@@ -398,15 +463,44 @@ const Rooms: React.FC = () => {
                             </button>
                         </div>
 
+                        {/* Player Controls for DJ */}
+                        <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6">
+                            <h3 className="text-white font-black uppercase italic tracking-tighter text-lg mb-4 flex items-center gap-2"><Zap size={18} fill="currentColor"/> Controls</h3>
+                            <div className="flex items-center gap-4">
+                                <div className="flex-1 min-w-0">
+                                   <p className="text-zinc-500 text-[9px] font-black uppercase tracking-widest mb-1">On Air Track</p>
+                                   <p className="text-white text-sm font-black uppercase truncate italic">{activeRoom.currentTrack?.title || 'None'}</p>
+                                </div>
+                                <button onClick={togglePlayback} disabled={!activeRoom.currentTrack} className="w-14 h-14 rounded-2xl bg-white text-black flex items-center justify-center disabled:opacity-30 active:scale-90 transition-all">
+                                    {activeRoom.isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1"/>}
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="space-y-4">
-                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> {t('concerts_library_title')}</h3>
-                            <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
-                                <option value="">{t('concerts_library_placeholder')}</option>
-                                {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                            </select>
+                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
+                            
+                            {/* Global Search */}
+                            <div className="relative">
+                                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
+                                <input 
+                                    type="text" 
+                                    value={globalSearchQuery}
+                                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                                    placeholder="Global Search tracks..." 
+                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"
+                                />
+                            </div>
+
+                            {!globalSearchQuery && (
+                                <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
+                                    <option value="">{t('concerts_library_placeholder')}</option>
+                                    {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                                </select>
+                            )}
 
                             <div className="space-y-3">
-                                {consoleTracks.map(track => (
+                                {displayTracks.map(track => (
                                     <div key={track.id} onClick={() => playInRoom(track)} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all cursor-pointer ${activeRoom.currentTrack?.id === track.id ? 'bg-sky-500/10 border-sky-500/30' : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-900'}`}>
                                         <img src={track.coverUrl} className="w-12 h-12 rounded-xl object-cover" alt=""/>
                                         <div className="flex-1 min-w-0">

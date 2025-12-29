@@ -89,7 +89,7 @@ const MinimizedRoom: React.FC = () => {
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t } = useStore(); 
+  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t, setRoomMinimized } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -97,13 +97,40 @@ const MainLayout: React.FC = () => {
   const [forceLoad, setForceLoad] = useState(false);
   const deepLinkProcessed = useRef(false);
 
-  // Faster safety timer (3s) for mobile networks
+  // Safety timer for loading states
   useEffect(() => {
     const timer = setTimeout(() => {
       setForceLoad(true);
     }, 3000);
     return () => clearTimeout(timer);
   }, []);
+
+  // Telegram Back Button Integration
+  useEffect(() => {
+    const tg = (window as any).Telegram?.WebApp;
+    if (!tg) return;
+
+    const shouldShowBack = overlayView !== 'none' || (activeRoom && !isRoomMinimized);
+    
+    if (shouldShowBack) {
+      tg.BackButton.show();
+      const onBack = () => {
+        if (overlayView !== 'none') {
+          setOverlayView('none');
+          setViewingUserId(null);
+        } else if (activeRoom && !isRoomMinimized) {
+          setRoomMinimized(true);
+        }
+      };
+      tg.BackButton.onClick(onBack);
+      return () => {
+        tg.BackButton.offClick(onBack);
+        tg.BackButton.hide();
+      };
+    } else {
+      tg.BackButton.hide();
+    }
+  }, [overlayView, activeRoom, isRoomMinimized, setRoomMinimized]);
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
@@ -121,9 +148,14 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
       if (activeRoom?.currentTrack) {
-          setCurrentTrack(activeRoom.currentTrack);
+          // If a room is active, don't show the standard player if room is visible
+          if (isRoomMinimized) {
+             setCurrentTrack(activeRoom.currentTrack);
+          } else {
+             setCurrentTrack(null);
+          }
       }
-  }, [activeRoom?.currentTrack]);
+  }, [activeRoom?.currentTrack, isRoomMinimized]);
 
   const handlePlayTrack = (track: Track) => setCurrentTrack(track);
 

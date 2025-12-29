@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
@@ -191,7 +192,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           djAvatar: r.profiles?.photo_url || '',
           coverUrl: r.cover_url, startTime: r.created_at,
           status: r.status, listeners: r.listeners_count || Math.floor(Math.random() * 5) + 1, 
-          isMicActive: !!r.is_mic_active
+          isMicActive: !!r.is_mic_active,
+          isPlaying: r.is_playing || false,
+          currentTrack: r.tracks ? { id: r.tracks.id, title: r.tracks.title, audioUrl: r.tracks.audio_url, coverUrl: r.tracks.cover_url } : undefined
         }));
         setRooms(mapped);
       }
@@ -399,6 +402,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const db: any = {}; 
         if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; 
         if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; 
+        if (up.isPlaying !== undefined) db.is_playing = up.isPlaying;
+        
         await supabase.from('rooms').update(db).eq('id', rid); 
         
         // Broadcast updates to all listeners
