@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause, Search, Clock, Headphones, Volume2 } from '../components/ui/Icons';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause, Search, Clock, Volume2 } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
@@ -26,7 +26,7 @@ const Rooms: React.FC = () => {
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [isMicOn, setIsMicOn] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isJoined, setIsJoined] = useState(false); // New state to track if user clicked "Join"
+  const [isJoined, setIsJoined] = useState(false);
 
   // Refs for audio handling
   const chatRef = useRef<HTMLDivElement>(null);
@@ -40,64 +40,83 @@ const Rooms: React.FC = () => {
   // DJ ID check helper
   const isDJ = activeRoom && currentUser?.id === activeRoom.djId;
 
-  // Robust Sync Function
+  /**
+   * Main Synchronization Logic
+   * 1. Set SRC
+   * 2. Load
+   * 3. Set currentTime (only when metadata ready)
+   * 4. Play
+   */
   const syncPlayback = useCallback(async () => {
-    if (!activeRoom?.currentTrack || !roomAudioRef.current) return;
+    if (!activeRoom?.currentTrack || !roomAudioRef.current) {
+        setIsSyncing(false);
+        return;
+    }
     
     setIsSyncing(true);
     const audio = roomAudioRef.current;
+    const targetSrc = activeRoom.currentTrack.audioUrl;
     
-    // Ensure correct source
-    if (audio.src !== activeRoom.currentTrack.audioUrl) {
-      audio.src = activeRoom.currentTrack.audioUrl;
-      audio.load();
-    }
-    
-    const performSeekAndPlay = async () => {
-      // Seek to current DJ position
-      const targetTime = activeRoom.currentProgress || 0;
-      audio.currentTime = targetTime;
-      
-      if (activeRoom.isPlaying) {
-        try {
-          await audio.play();
-          setIsSyncing(false);
-        } catch (err) {
-          console.warn("Autoplay blocked or playback failed", err);
-          setIsSyncing(false);
+    const applySync = async () => {
+        const targetTime = activeRoom.currentProgress || 0;
+        
+        // Only seek if we are more than 1.5s off
+        if (Math.abs(audio.currentTime - targetTime) > 1.5) {
+            audio.currentTime = targetTime;
         }
-      } else {
-        audio.pause();
+        
+        if (activeRoom.isPlaying) {
+            try {
+                await audio.play();
+            } catch (err) {
+                console.warn("Playback blocked by browser policy. Interaction needed.");
+            }
+        } else {
+            audio.pause();
+        }
         setIsSyncing(false);
-      }
     };
 
-    if (audio.readyState >= 3) { // Have enough data to play
-      await performSeekAndPlay();
+    // If source is different, we MUST reload
+    if (audio.src !== targetSrc) {
+        audio.src = targetSrc;
+        audio.load();
+        
+        const onLoaded = async () => {
+            await applySync();
+            audio.removeEventListener('loadedmetadata', onLoaded);
+        };
+        audio.addEventListener('loadedmetadata', onLoaded);
     } else {
-      const onCanPlay = async () => {
-        await performSeekAndPlay();
-        audio.removeEventListener('canplay', onCanPlay);
-      };
-      audio.addEventListener('canplay', onCanPlay);
+        // Source is same, just check sync
+        if (audio.readyState >= 1) {
+            await applySync();
+        } else {
+            const onLoaded = async () => {
+                await applySync();
+                audio.removeEventListener('loadedmetadata', onLoaded);
+            };
+            audio.addEventListener('loadedmetadata', onLoaded);
+        }
     }
   }, [activeRoom]);
 
-  // Mandatory Join Handler (Bypasses Autoplay Policy)
+  // Listener's Entry Point: This MUST be triggered by a click to bypass Autoplay
   const handleJoinLive = async () => {
     setIsJoined(true);
     if (roomAudioRef.current) {
-        // We trigger an empty play/pause to unlock audio context on mobile
-        roomAudioRef.current.play().then(() => {
-            roomAudioRef.current?.pause();
-            syncPlayback();
-        }).catch(() => {
-            syncPlayback();
-        });
+        try {
+            // Trigger a dummy play to "unlock" the audio element for future programmatic plays
+            await roomAudioRef.current.play();
+            roomAudioRef.current.pause();
+            await syncPlayback();
+        } catch (e) {
+            await syncPlayback();
+        }
     }
   };
 
-  // 1. Supabase Realtime Subscription
+  // 1. Subscription Effect
   useEffect(() => {
     if (!activeRoom) {
       setMessages([]);
@@ -113,31 +132,33 @@ const Rooms: React.FC = () => {
       })
       .on('broadcast', { event: 'room_sync' }, (payload) => {
         const updates = payload.payload;
+        
+        // Listeners apply updates if they already "joined" (unlocked audio)
+        if (roomAudioRef.current && !isDJ && isJoined) {
+            const audio = roomAudioRef.current;
+            
+            if (updates.currentTrack) {
+                audio.src = updates.currentTrack.audioUrl;
+                audio.load();
+                const onLoaded = () => {
+                    audio.currentTime = updates.currentProgress || 0;
+                    if (updates.isPlaying !== false) audio.play().catch(() => {});
+                    audio.removeEventListener('loadedmetadata', onLoaded);
+                };
+                audio.addEventListener('loadedmetadata', onLoaded);
+            } else {
+                if (updates.currentProgress !== undefined) {
+                    const diff = Math.abs(audio.currentTime - updates.currentProgress);
+                    if (diff > 2.5) audio.currentTime = updates.currentProgress;
+                }
+                if (updates.isPlaying === true) audio.play().catch(() => {});
+                else if (updates.isPlaying === false) audio.pause();
+            }
+        }
+
         setActiveRoom((prev: Room | null) => {
            if (!prev) return null;
-           const newRoom = { ...prev, ...updates };
-           
-           // If we are a listener and have joined, apply updates
-           if (roomAudioRef.current && !isDJ && isJoined) {
-             const audio = roomAudioRef.current;
-             
-             if (updates.currentTrack) {
-               audio.src = updates.currentTrack.audioUrl;
-               audio.currentTime = updates.currentProgress || 0;
-             } else if (updates.currentProgress !== undefined) {
-               const diff = Math.abs(audio.currentTime - updates.currentProgress);
-               // Sync if more than 2s difference
-               if (diff > 2) audio.currentTime = updates.currentProgress;
-             }
-
-             if (updates.isPlaying === true) {
-               audio.play().catch(() => {});
-             } else if (updates.isPlaying === false) {
-               audio.pause();
-             }
-           }
-           
-           return newRoom;
+           return { ...prev, ...updates };
         });
       })
       .on('broadcast', { event: 'voice_chunk' }, (payload) => {
@@ -157,20 +178,23 @@ const Rooms: React.FC = () => {
     };
   }, [activeRoom?.id, isDJ, setActiveRoom, t, isJoined]);
 
-  // 2. DJ Periodic State Update (Broadcasting progress MORE FREQUENTLY)
+  // 2. DJ Sync Loop (Broadcasting state)
   useEffect(() => {
     if (!activeRoom || !isDJ || !roomAudioRef.current) return;
     
     const interval = setInterval(() => {
       if (roomAudioRef.current && activeRoom.isPlaying) {
-        updateRoomState(activeRoom.id, { currentProgress: roomAudioRef.current.currentTime });
+        updateRoomState(activeRoom.id, { 
+            currentProgress: roomAudioRef.current.currentTime,
+            isPlaying: !roomAudioRef.current.paused 
+        });
       }
-    }, 3000); // sync every 3 seconds for better real-time feel
+    }, 3000); 
     
     return () => clearInterval(interval);
   }, [activeRoom?.id, activeRoom?.isPlaying, isDJ, updateRoomState]);
 
-  // 3. DJ Console - Tracks Logic
+  // 3. Playlists & Tracks
   useEffect(() => {
       if (selectedPlaylistId) {
           fetchPlaylistTracks(selectedPlaylistId).then(setConsoleTracks);
@@ -184,7 +208,7 @@ const Rooms: React.FC = () => {
 
   const displayTracks = globalSearchQuery ? filteredGlobalTracks : consoleTracks;
 
-  // 4. Mic Capture
+  // 4. Mic Logic
   const startMicBroadcast = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -265,7 +289,7 @@ const Rooms: React.FC = () => {
           { id: '1', userId: 0, username: 'System', text: `${t('concerts_welcome_msg')} ${roomToOpen.title}`, type: 'system', createdAt: new Date().toISOString() }
       ]);
       
-      // For DJ, we skip the "Join" overlay as they already interacted
+      // DJs join automatically
       if (currentUser?.id === roomToOpen.djId) {
           setIsJoined(true);
       }
@@ -278,22 +302,13 @@ const Rooms: React.FC = () => {
       await createRoom({ title: newRoomTitle, coverFile: newRoomCover, trackId: selectedTrackId || undefined });
       setIsCreating(false);
       setShowCreateModal(false);
-      setIsJoined(true); // Creator automatically joins
+      setIsJoined(true); 
   };
 
   const handleEndSession = async () => {
       if (activeRoom && isDJ) {
-          const tg = (window as any).Telegram?.WebApp;
           const confirmText = t('track_delete_confirm') || "End session?";
-          if (tg) {
-              tg.showConfirm(confirmText, async (confirmed: boolean) => {
-                  if (confirmed) {
-                      await deleteRoom(activeRoom.id);
-                      setActiveRoom(null);
-                      setRoomMinimized(false);
-                  }
-              });
-          } else if (window.confirm(confirmText)) {
+          if (window.confirm(confirmText)) {
               await deleteRoom(activeRoom.id);
               setActiveRoom(null);
           }
@@ -305,22 +320,20 @@ const Rooms: React.FC = () => {
       const newState = !isMicOn;
       setIsMicOn(newState);
       updateRoomState(activeRoom.id, { isMicActive: newState });
-      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('medium');
   };
 
   const playInRoom = (track: Track) => {
       if (!activeRoom || !isDJ || !roomAudioRef.current) return;
       roomAudioRef.current.src = track.audioUrl;
       roomAudioRef.current.currentTime = 0;
-      roomAudioRef.current.play();
+      roomAudioRef.current.play().catch(() => {});
       updateRoomState(activeRoom.id, { currentTrack: track, isPlaying: true, currentProgress: 0 });
-      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
   };
 
   const togglePlayback = () => {
       if (!activeRoom || !isDJ || !roomAudioRef.current) return;
       const newState = !activeRoom.isPlaying;
-      if (newState) roomAudioRef.current.play();
+      if (newState) roomAudioRef.current.play().catch(() => {});
       else roomAudioRef.current.pause();
       updateRoomState(activeRoom.id, { isPlaying: newState, currentProgress: roomAudioRef.current.currentTime });
   };
@@ -353,7 +366,6 @@ const Rooms: React.FC = () => {
                   </div>
                   <button onClick={() => setShowCreateModal(true)} className="p-3 bg-sky-500 text-black rounded-2xl shadow-lg shadow-sky-500/20 active:scale-95 transition-all"><Plus size={24} /></button>
               </header>
-
               <div className="space-y-6">
                   <h2 className="text-[10px] font-black text-sky-400 uppercase tracking-[0.2em] flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]"/> {t('concerts_live_now')}
@@ -361,15 +373,15 @@ const Rooms: React.FC = () => {
                   <div className="grid gap-5">
                       {rooms.map(room => (
                           <div key={room.id} onClick={() => handleOpenRoom(room)} className="group relative aspect-[16/9] rounded-[2.5rem] overflow-hidden cursor-pointer border border-white/5 bg-zinc-900 shadow-2xl transition-all active:scale-[0.98]">
-                              <img src={room.coverUrl || room.djAvatar} className="w-full h-full object-cover opacity-50 transition-transform duration-700 group-hover:scale-105" alt=""/>
+                              <img src={room.coverUrl || room.djAvatar} className="w-full h-full object-cover opacity-50" alt=""/>
                               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
-                              <div className="absolute top-5 left-5 bg-sky-500 text-black text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest shadow-xl">LIVE</div>
+                              <div className="absolute top-5 left-5 bg-sky-500 text-black text-[9px] font-black px-3 py-1.5 rounded-xl uppercase tracking-widest">LIVE</div>
                               <div className="absolute top-5 right-5 bg-black/60 backdrop-blur-md text-white text-[10px] font-black px-3 py-1.5 rounded-xl flex items-center gap-1.5 border border-white/10"><Users size={12} /> {room.listeners}</div>
                               <div className="absolute bottom-6 left-6 right-6">
-                                  <h3 className="text-white font-black text-xl uppercase italic tracking-tighter leading-none">{room.title}</h3>
-                                  <div className="flex items-center gap-2 mt-3 opacity-80">
+                                  <h3 className="text-white font-black text-xl uppercase italic tracking-tighter">{room.title}</h3>
+                                  <div className="flex items-center gap-2 mt-3">
                                       <img src={room.djAvatar} className="w-6 h-6 rounded-full" alt=""/>
-                                      <span className="text-zinc-300 text-[11px] font-black uppercase tracking-tight">{room.djName}</span>
+                                      <span className="text-zinc-300 text-[11px] font-black uppercase">{room.djName}</span>
                                   </div>
                               </div>
                           </div>
@@ -382,28 +394,17 @@ const Rooms: React.FC = () => {
                       )}
                   </div>
               </div>
-
               {showCreateModal && (
                   <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in">
                       <div className="bg-zinc-950 border border-white/10 rounded-[3rem] w-full max-w-md p-8 shadow-2xl relative">
                           <button onClick={() => setShowCreateModal(false)} className="absolute top-6 right-6 text-zinc-500 p-2"><X size={24}/></button>
                           <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-8">{t('concerts_create')}</h2>
                           <form onSubmit={handleCreateRoom} className="space-y-6">
-                              <div onClick={() => coverInputRef.current?.click()} className="aspect-video rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/10 flex flex-col items-center justify-center cursor-pointer overflow-hidden transition-all hover:border-sky-500/50">
+                              <div onClick={() => coverInputRef.current?.click()} className="aspect-video rounded-[2rem] bg-zinc-900 border-2 border-dashed border-white/10 flex items-center justify-center cursor-pointer overflow-hidden">
                                   {previewCover ? <img src={previewCover} className="w-full h-full object-cover" alt=""/> : <><ImageIcon size={32} className="text-zinc-700 mb-2" /><span className="text-[10px] font-black uppercase text-zinc-500">{t('concerts_create_cover')}</span></>}
                                   <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={e => { if (e.target.files?.[0]) { setNewRoomCover(e.target.files[0]); setPreviewCover(URL.createObjectURL(e.target.files[0])); } }} />
                               </div>
-                              <div>
-                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">{t('concerts_create_title')}</label>
-                                  <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none focus:ring-1 focus:ring-sky-500" placeholder="Radio Name..." />
-                              </div>
-                              <div>
-                                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-600 mb-2">{t('concerts_create_label_track')}</label>
-                                  <select value={selectedTrackId} onChange={e => setSelectedTrackId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none appearance-none focus:ring-1 focus:ring-sky-500">
-                                      <option value="">{t('concerts_create_option_none')}</option>
-                                      {myTracks.map(track => <option key={track.id} value={track.id}>{track.title}</option>)}
-                                  </select>
-                              </div>
+                              <input required type="text" value={newRoomTitle} onChange={e => setNewRoomTitle(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-bold outline-none" placeholder="Room Title..." />
                               <button type="submit" disabled={isCreating || !newRoomTitle} className="w-full bg-sky-500 text-black py-5 rounded-[1.5rem] font-black uppercase tracking-widest shadow-xl shadow-sky-500/20 disabled:opacity-30 flex items-center justify-center gap-3">
                                   {isCreating ? <Loader2 className="animate-spin" size={20}/> : <><Zap size={20} fill="currentColor"/> {t('concerts_create_btn')}</>}
                               </button>
@@ -419,23 +420,18 @@ const Rooms: React.FC = () => {
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
           <audio ref={roomAudioRef} className="hidden" crossOrigin="anonymous" preload="auto" />
           
-          {/* CRITICAL: Mandatory Interaction Overlay for Listeners */}
+          {/* Join Overlay - Critical for bypass Autoplay */}
           {!isJoined && !isDJ && (
-              <div 
-                className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-center p-8 text-center animate-in fade-in"
-              >
+              <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
                   <div className="w-28 h-28 bg-sky-500 rounded-full flex items-center justify-center text-black mb-8 shadow-[0_0_50px_rgba(56,189,248,0.5)] animate-pulse">
                       <Volume2 size={52} fill="currentColor" />
                   </div>
-                  <h3 className="text-white text-3xl font-black uppercase italic tracking-tighter mb-4">Live Session</h3>
+                  <h3 className="text-white text-3xl font-black uppercase italic tracking-tighter mb-4">Join Live Radio</h3>
                   <p className="text-zinc-500 text-sm font-bold uppercase tracking-[0.2em] mb-10 leading-relaxed">
-                    Synchronizing audio... <br/> Tap to enter the room
+                    Connecting to the broadcast... <br/> Tap to enter
                   </p>
-                  <button 
-                    onClick={handleJoinLive}
-                    className="w-full max-w-xs py-5 bg-white text-black rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
-                  >
-                      <Zap size={20} fill="currentColor" /> Listen Live
+                  <button onClick={handleJoinLive} className="w-full max-w-xs py-5 bg-white text-black rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                      <Play size={20} fill="currentColor" /> Enter Room
                   </button>
               </div>
           )}
@@ -447,7 +443,7 @@ const Rooms: React.FC = () => {
               <div className="flex items-center gap-3">
                   <div className="bg-zinc-900/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-white/10 flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" />
-                      <span className="text-white text-[10px] font-black uppercase tracking-widest">{t('concerts_viewers')}: {activeRoom.listeners}</span>
+                      <span className="text-white text-[10px] font-black uppercase tracking-widest">{activeRoom.listeners} {t('concerts_viewers')}</span>
                   </div>
                   {isDJ && (
                       <button onClick={handleEndSession} className="p-3 bg-red-500/20 rounded-full text-red-500 border border-red-500/20">
@@ -470,20 +466,15 @@ const Rooms: React.FC = () => {
                                 <span className="text-white font-black text-sm uppercase italic block">{activeRoom.djName}</span>
                                 <span className="text-sky-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-2">
                                     {activeRoom.isMicActive && <Mic size={10} className="text-red-500 animate-pulse" />}
-                                    {activeRoom.currentTrack ? `${t('concerts_on_air')}: ${activeRoom.currentTrack.title}` : 'LIVE DJ SET'}
+                                    {activeRoom.currentTrack ? `${t('concerts_on_air')}: ${activeRoom.currentTrack.title}` : 'LIVE STREAM'}
                                 </span>
                             </div>
                        </div>
                    </div>
-                   
                    <div className="flex flex-col items-center gap-4">
                        {!isDJ && (
-                           <button 
-                             onClick={syncPlayback}
-                             className={`p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white border border-white/10 active:scale-95 transition-all flex items-center gap-2 ${isSyncing ? 'animate-pulse' : ''}`}
-                           >
-                               {isSyncing ? <Loader2 size={20} className="animate-spin" /> : <Clock size={20} />}
-                               <span className="text-[10px] font-black uppercase">Sync</span>
+                           <button onClick={syncPlayback} className={`p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white border border-white/10 ${isSyncing ? 'animate-pulse' : ''}`}>
+                               <Clock size={20} />
                            </button>
                        )}
                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-black transition-all ${activeRoom.isMicActive ? 'bg-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'bg-sky-500'}`}>
@@ -539,7 +530,6 @@ const Rooms: React.FC = () => {
                                 <Mic size={32} />
                             </button>
                         </div>
-
                         <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6">
                             <h3 className="text-white font-black uppercase italic tracking-tighter text-lg mb-4 flex items-center gap-2"><Zap size={18} fill="currentColor"/> Controls</h3>
                             <div className="flex items-center gap-4">
@@ -552,34 +542,19 @@ const Rooms: React.FC = () => {
                                 </button>
                             </div>
                         </div>
-
                         <div className="space-y-4">
-                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
+                            <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Library</h3>
                             <div className="relative">
                                 <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
-                                <input 
-                                    type="text" 
-                                    value={globalSearchQuery}
-                                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                                    placeholder="Global Search tracks..." 
-                                    className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"
-                                />
+                                <input type="text" value={globalSearchQuery} onChange={(e) => setGlobalSearchQuery(e.target.value)} placeholder="Search tracks..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-white text-xs font-bold focus:ring-1 focus:ring-sky-500 outline-none"/>
                             </div>
-
-                            {!globalSearchQuery && (
-                                <select value={selectedPlaylistId} onChange={e => setSelectedPlaylistId(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-2xl p-4 text-white font-black uppercase text-xs focus:ring-1 focus:ring-sky-500 outline-none">
-                                    <option value="">{t('concerts_library_placeholder')}</option>
-                                    {myPlaylists.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                                </select>
-                            )}
-
                             <div className="space-y-3">
                                 {displayTracks.map(track => (
                                     <div key={track.id} onClick={() => playInRoom(track)} className={`flex items-center gap-4 p-3 rounded-2xl border transition-all cursor-pointer ${activeRoom.currentTrack?.id === track.id ? 'bg-sky-500/10 border-sky-500/30' : 'bg-zinc-900/50 border-white/5 hover:bg-zinc-900'}`}>
                                         <img src={track.coverUrl} className="w-12 h-12 rounded-xl object-cover" alt=""/>
                                         <div className="flex-1 min-w-0">
                                             <h4 className="text-white text-sm font-black uppercase truncate italic">{track.title}</h4>
-                                            <p className="text-zinc-500 text-[10px] font-bold uppercase truncate">{track.uploaderName}</p>
+                                            <p className="text-zinc-500 text-[10px] font-bold truncate">{track.uploaderName}</p>
                                         </div>
                                         <div className={`p-2 rounded-lg ${activeRoom.currentTrack?.id === track.id ? 'bg-sky-500 text-black' : 'bg-zinc-800 text-zinc-600'}`}>
                                             <Play size={16} fill="currentColor" />
