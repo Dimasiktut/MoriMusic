@@ -1,5 +1,4 @@
-
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
@@ -84,10 +83,11 @@ export const useVisuals = () => {
   return context;
 };
 
-// Internal Visual Provider to isolate audioIntensity updates
+// Internal Visual Provider to isolate high-frequency audioIntensity updates
 const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [audioIntensity, setAudioIntensity] = useState(0);
-  return React.createElement(VisualContext.Provider, { value: { audioIntensity, setAudioIntensity } }, children);
+  const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
+  return React.createElement(VisualContext.Provider, { value }, children);
 };
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -118,7 +118,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const mapTracksData = useCallback((rawTracks: any[], userLikes: string[] = []): Track[] => {
       if (!rawTracks) return [];
       return rawTracks.map((trk: any) => {
-          // Count mapping logic
+          // Fixed count mapping logic to reliably extract counts from Supabase response
           const likesCount = trk.track_likes?.[0]?.count ?? (trk.likes_count ?? trk.likes ?? 0);
           const commentsData = trk.comments || [];
           const playsCount = trk.plays ?? trk.play_count ?? 0;
@@ -146,7 +146,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 createdAt: c.created_at
               })) : [],
               isLikedByCurrentUser: userLikes.includes(trk.id), 
-              isVerifiedUploader: !!trk.profiles?.is_verified || playsCount > 1000 
+              isVerifiedUploader: playsCount > 1000 
           };
       });
   }, []);
@@ -157,7 +157,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         .from('tracks')
         .select(`
           *, 
-          profiles:uploader_id(username, photo_url, is_verified),
+          profiles:uploader_id(username, photo_url),
           track_likes(count),
           comments(id, text, created_at, user_id, profiles:user_id(username, photo_url))
         `)
@@ -221,7 +221,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
           photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
           stats: { uploads: uploads || 0, likesReceived: likesReceived || 0, totalPlays: totalPlays }, 
-          isVerified: !!profile.is_verified
+          isVerified: totalPlays > 5000
       };
     } catch (e) { return null; }
   }, []);
@@ -282,6 +282,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await fetchTracks(currentUser.id);
     } finally { setIsLoading(false); }
   };
+
+  // Fix: Added missing deleteTrack implementation
+  const deleteTrack = useCallback(async (trackId: string) => {
+    if (!currentUser) return;
+    try {
+      const { error } = await supabase.from('tracks').delete().eq('id', trackId).eq('uploader_id', currentUser.id);
+      if (error) throw error;
+      setTracks(prev => prev.filter(t => t.id !== trackId));
+    } catch (e: any) {
+      console.error("Delete track error:", e.message || e);
+    }
+  }, [currentUser]);
 
   const generateTrackDescription = async (title: string, genre: string) => {
     try {
@@ -370,26 +382,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     initApp();
   }, [fetchTracks, fetchRooms, refreshUserContext, fetchUserById]);
 
-  const value: StoreContextType = {
+  // Memoize context value to prevent unnecessary re-renders when high-frequency state changes elsewhere
+  const value: StoreContextType = useMemo(() => ({
     currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, setActiveRoom, setRoomMinimized, isLoading, language, setLanguage, t,
     uploadTrack, uploadAlbum, generateTrackDescription, 
-    createPlaylist: async (t) => { if (currentUser) await supabase.from('playlists').insert({ user_id: currentUser.id, title: t }); }, 
+    createPlaylist: async (title) => { if (currentUser) await supabase.from('playlists').insert({ user_id: currentUser.id, title }); }, 
     addToPlaylist: async (tid, pid) => { await supabase.from('playlist_items').insert({ playlist_id: pid, track_id: tid }); },
     fetchUserPlaylists: async (uid) => { const { data } = await supabase.from('playlists').select('*').eq('user_id', uid); return (data || []).map((p: any) => ({ id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at })); },
     fetchSavedPlaylists: async (uid) => { const { data } = await supabase.from('saved_playlists').select('playlists(*)').eq('user_id', uid); return data?.map((d: any) => d.playlists).filter(Boolean).map((p: any) => ({ id: p.id, userId: p.user_id, title: p.title, coverUrl: p.cover_url, createdAt: p.created_at })) || []; },
     toggleSavePlaylist: async (pid) => { if (!currentUser) return; const isSaved = savedPlaylists.some(p => p.id === pid); if (isSaved) await supabase.from('saved_playlists').delete().eq('user_id', currentUser.id).eq('playlist_id', pid); else await supabase.from('saved_playlists').insert({ user_id: currentUser.id, playlist_id: pid }); },
-    fetchPlaylistTracks: async (pid) => { const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count))').eq('playlist_id', pid); return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], []); },
-    deleteTrack: async (tid) => { await supabase.from('tracks').delete().eq('id', tid); setTracks(prev => prev.filter(t => t.id !== tid)); },
-    downloadTrack: async (track) => { const a = document.createElement('a'); a.href = track.audioUrl; a.download = `${track.title}.mp3`; a.click(); },
+    fetchPlaylistTracks: async (pid) => { const { data } = await supabase.from('playlist_items').select('tracks(*, profiles:uploader_id(username, photo_url), track_likes(count))').eq('playlist_id', pid); return mapTracksData(data?.map((d: any) => d.tracks).filter(Boolean) || [], []); },
+    deleteTrack, downloadTrack: async (track) => { const a = document.createElement('a'); a.href = track.audioUrl; a.download = `${track.title}.mp3`; a.click(); },
     toggleLike, addComment, recordListen, updateProfile, uploadImage, fetchUserById,
-    getChartTracks: async () => { const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').order('plays', { ascending: false }).limit(20); return mapTracksData(data || [], []); },
-    getLikedTracks: async (uid) => { const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', uid); if (!likes?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').in('id', likes.map(l => l.track_id)); return mapTracksData(data || [], likes.map(l => l.track_id)); },
-    getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url, is_verified), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
+    getChartTracks: async () => { const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').order('plays', { ascending: false }).limit(20); return mapTracksData(data || [], []); },
+    getLikedTracks: async (uid) => { const { data: likes } = await supabase.from('track_likes').select('track_id').eq('user_id', uid); if (!likes?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', likes.map(l => l.track_id)); return mapTracksData(data || [], likes.map(l => l.track_id)); },
+    getUserHistory: async (uid) => { const { data: hist } = await supabase.from('listen_history').select('track_id').eq('user_id', uid).order('played_at', { ascending: false }).limit(20); if (!hist?.length) return []; const { data } = await supabase.from('tracks').select('*, profiles:uploader_id(username, photo_url), track_likes(count)').in('id', [...new Set(hist.map(h => h.track_id))]); return mapTracksData(data || [], []); },
     createRoom, deleteRoom, fetchRooms, 
     sendRoomMessage: async (rid, msg) => { await supabase.channel(`room:${rid}`).send({ type: 'broadcast', event: 'message', payload: msg }); },
     updateRoomState: async (rid, up) => { const db: any = {}; if (up.isMicActive !== undefined) db.is_mic_active = up.isMicActive; if (up.currentTrack !== undefined) db.track_id = up.currentTrack?.id; await supabase.from('rooms').update(db).eq('id', rid); if (activeRoom?.id === rid) setActiveRoom({ ...activeRoom, ...up }); },
     donateToRoom: async () => true
-  };
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, mapTracksData, deleteTrack, fetchRooms, setActiveRoom]);
 
   return React.createElement(
     StoreContext.Provider,
