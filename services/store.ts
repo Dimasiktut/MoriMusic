@@ -175,7 +175,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
 
       setTracks(mapTracksData(tracksData || [], userLikes));
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Tracks fetch error", e); }
   }, [mapTracksData]);
 
   const fetchRooms = useCallback(async () => {
@@ -203,7 +203,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }));
         setRooms(mapped);
       }
-    } catch (e) {}
+    } catch (e) { console.error("Rooms fetch error", e); }
   }, [mapTracksData]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
@@ -263,7 +263,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     isInitialLoadDone.current = true;
     
     // Safety timeout to hide loader no matter what
-    const safetyTimer = setTimeout(() => setIsLoading(false), 5000);
+    const safetyTimer = setTimeout(() => setIsLoading(false), 8000);
 
     const initApp = async () => {
         try {
@@ -279,11 +279,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     await refreshUserContext(user.id); 
                 } else {
                     const tgUser = tg.initDataUnsafe.user;
-                    await supabase.from('profiles').insert({ 
+                    await supabase.from('profiles').upsert({ 
                         id: tgUser.id, 
                         username: tgUser.username || `user_${tgUser.id}`, 
-                        first_name: tgUser.first_name, 
-                        last_name: tgUser.last_name, 
+                        first_name: tgUser.first_name || '', 
+                        last_name: tgUser.last_name || '', 
                         photo_url: tgUser.photo_url || '' 
                     });
                     const newUser = await fetchUserById(tgUser.id);
@@ -310,7 +310,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     deleteTrack: async () => {}, downloadTrack: async () => {}, toggleLike: async () => {}, addComment: async () => {}, recordListen: async () => {}, updateProfile: async () => {}, uploadImage: async () => '',
     fetchUserById, getChartTracks: async () => [], getLikedTracks: async () => [], getUserHistory: async () => [], createRoom: async () => {}, deleteRoom: async () => {}, fetchRooms, fetchRoomById: async () => null,
     sendRoomMessage: async () => {}, updateRoomState: async () => {}, donateToRoom: async () => true
-  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, fetchRooms, fetchUserById, generateTrackDescription]);
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, rooms, activeRoom, isRoomMinimized, isLoading, language, t, fetchRooms, fetchUserById, generateTrackDescription, setActiveRoom, setRoomMinimized]);
 
   return React.createElement(
     StoreContext.Provider,
