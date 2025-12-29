@@ -25,14 +25,12 @@ const GlobalRoomPlayer: React.FC = () => {
 
     const isDJ = activeRoom && currentUser?.id === activeRoom.djId;
 
-    // DJ is auto-joined
     useEffect(() => {
         if (isDJ && !isJoined) {
             setIsJoined(true);
         }
     }, [isDJ, isJoined]);
 
-    // Visual Intensity Sync for Global Player
     useEffect(() => {
         const updateIntensity = () => {
             if (activeRoom?.isPlaying && audioRef.current && !audioRef.current.paused) {
@@ -53,7 +51,6 @@ const GlobalRoomPlayer: React.FC = () => {
         return () => cancelAnimationFrame(animationFrameRef.current);
     }, [activeRoom?.isPlaying, setAudioIntensity]);
 
-    // DJ Heartbeat: Sync progress to DB
     useEffect(() => {
         if (!activeRoom || !isDJ || !audioRef.current) return;
         const interval = setInterval(() => {
@@ -67,7 +64,6 @@ const GlobalRoomPlayer: React.FC = () => {
         return () => clearInterval(interval);
     }, [activeRoom?.id, activeRoom?.isPlaying, isDJ, updateRoomState]);
 
-    // Persistent Playback Logic for both DJ and Joined Listeners
     useEffect(() => {
         if (!activeRoom || !audioRef.current || !isJoined) return;
         
@@ -75,7 +71,6 @@ const GlobalRoomPlayer: React.FC = () => {
         const roomTrack = activeRoom.currentTrack;
 
         if (roomTrack) {
-            // If source changed
             if (audio.src !== roomTrack.audioUrl) {
                 audio.pause();
                 audio.src = roomTrack.audioUrl;
@@ -86,14 +81,12 @@ const GlobalRoomPlayer: React.FC = () => {
                     audio.play().catch(e => console.warn("Global playback blocked:", e));
                 }
             } else {
-                // Same source, sync play/pause
                 if (activeRoom.isPlaying && audio.paused) {
                     audio.play().catch(() => {});
                 } else if (!activeRoom.isPlaying && !audio.paused) {
                     audio.pause();
                 }
                 
-                // For non-DJs, sync time if drift is large
                 if (!isDJ && activeRoom.currentProgress !== undefined) {
                     const drift = Math.abs(audio.currentTime - activeRoom.currentProgress);
                     if (drift > 5) {
@@ -102,13 +95,11 @@ const GlobalRoomPlayer: React.FC = () => {
                 }
             }
         } else {
-            // No track on air
             audio.pause();
             audio.src = '';
         }
     }, [activeRoom?.currentTrack?.id, activeRoom?.isPlaying, isJoined, isDJ]);
 
-    // Voice broadcasting logic
     useEffect(() => {
         if (!activeRoom) {
             setIsJoined(false);
@@ -119,7 +110,6 @@ const GlobalRoomPlayer: React.FC = () => {
         channel
             .on('broadcast', { event: 'room_sync' }, (payload) => {
                 const updates = payload.payload;
-                // Update local state from remote broadcast if not DJ
                 if (!isDJ) {
                     setActiveRoom((prev: Room | null) => prev ? { ...prev, ...updates } : null);
                 }
@@ -323,7 +313,7 @@ const MainLayout: React.FC = () => {
   }, [overlayView, activeRoom, isRoomMinimized, setActiveRoom, t, currentUser]);
   
   useEffect(() => {
-    if (tracks.length > 0 && !deepLinkProcessed.current) {
+    if (tracks && tracks.length > 0 && !deepLinkProcessed.current) {
         const tgParam = (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
         const startParam = tgParam || new URLSearchParams(window.location.search).get('startapp');
         if (startParam && startParam.startsWith('track_')) {
@@ -345,13 +335,13 @@ const MainLayout: React.FC = () => {
   const handlePlayTrack = (track: Track) => setCurrentTrack(track);
 
   const handleNextTrack = () => {
-    if (!currentTrack || tracks.length === 0) return;
+    if (!currentTrack || !tracks || tracks.length === 0) return;
     const idx = tracks.findIndex(t => t.id === currentTrack.id);
     if (idx !== -1) setCurrentTrack(tracks[(idx + 1) % tracks.length]);
   };
 
   const handlePrevTrack = () => {
-    if (!currentTrack || tracks.length === 0) return;
+    if (!currentTrack || !tracks || tracks.length === 0) return;
     const idx = tracks.findIndex(t => t.id === currentTrack.id);
     if (idx !== -1) setCurrentTrack(tracks[(idx - 1 + tracks.length) % tracks.length]);
   };
@@ -368,16 +358,20 @@ const MainLayout: React.FC = () => {
   };
 
   const renderContent = () => {
-    if (overlayView === 'settings') return <SettingsPage onBack={() => setOverlayView('none')} />;
-    if (overlayView === 'user_profile') return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => { }} onBack={() => setOverlayView('none')} targetUserId={viewingUserId} />;
+    try {
+      if (overlayView === 'settings') return <SettingsPage onBack={() => setOverlayView('none')} />;
+      if (overlayView === 'user_profile') return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => { }} onBack={() => setOverlayView('none')} targetUserId={viewingUserId} />;
 
-    switch (activeTab) {
-      case 'feed': return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
-      case 'charts': return <Charts onPlayTrack={handlePlayTrack} />;
-      case 'rooms': return <Rooms />;
-      case 'upload': return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
-      case 'profile': return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} />;
-      default: return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
+      switch (activeTab) {
+        case 'feed': return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
+        case 'charts': return <Charts onPlayTrack={handlePlayTrack} />;
+        case 'rooms': return <Rooms />;
+        case 'upload': return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
+        case 'profile': return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} />;
+        default: return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
+      }
+    } catch (e) {
+      return <div className="p-20 text-center text-red-500 font-bold uppercase tracking-widest">Component Error</div>;
     }
   };
 
