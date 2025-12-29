@@ -314,9 +314,12 @@ const MainLayout: React.FC = () => {
   
   useEffect(() => {
     if (tracks && tracks.length > 0 && !deepLinkProcessed.current) {
-        const tgParam = (window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
-        const startParam = tgParam || new URLSearchParams(window.location.search).get('startapp');
-        if (startParam && startParam.startsWith('track_')) {
+        const tg = (window as any).Telegram?.WebApp;
+        // CORRECT: Look for start_param in TWA initData
+        const startParam = tg?.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('startapp');
+        
+        // ENSURE it is a string before calling startsWith
+        if (typeof startParam === 'string' && startParam.startsWith('track_')) {
             const trackId = startParam.replace('track_', '');
             const found = tracks.find(t => t.id === trackId);
             if (found) setCurrentTrack(found);
