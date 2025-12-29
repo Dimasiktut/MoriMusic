@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StoreProvider, useStore, useVisuals } from './services/store';
 import { TabView, Track, Room } from './types';
 import Feed from './pages/Feed';
@@ -14,7 +14,7 @@ import { supabase } from './services/supabase';
 
 // Global Player component that persists throughout the app session
 const GlobalRoomPlayer: React.FC = () => {
-    const { activeRoom, currentUser, updateRoomState, setActiveRoom, setRoomMinimized } = useStore();
+    const { activeRoom, currentUser, updateRoomState, setActiveRoom } = useStore();
     const { setAudioIntensity } = useVisuals();
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [isJoined, setIsJoined] = useState(false);
@@ -170,7 +170,6 @@ const GlobalRoomPlayer: React.FC = () => {
         micAudioContextRef.current.resume().catch(() => {});
         
         setIsJoined(true);
-        // Playback effect will trigger automatically due to state change
     };
 
     if (!activeRoom) return null;
