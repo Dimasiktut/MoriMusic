@@ -85,14 +85,12 @@ export const useVisuals = () => {
   return context;
 };
 
-// Fix: Change React.Node to React.ReactNode as Node does not exist in React namespace
 const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [audioIntensity, setAudioIntensity] = useState(0);
   const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
   return React.createElement(VisualContext.Provider, { value: value }, children);
 };
 
-// Fix: Change React.Node to React.ReactNode as Node does not exist in React namespace
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
@@ -327,7 +325,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const refreshUserContext = useCallback(async (userId: number) => {
     try {
-      const [{ data: likesData }, { data: plData }] = await Promise.all([
+      const [{ data: likesData }, plData] = await Promise.all([
         supabase.from('track_likes').select('track_id').eq('user_id', userId),
         fetchUserPlaylists(userId)
       ]);
@@ -407,6 +405,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   return React.createElement(
     StoreContext.Provider,
     { value: value },
-    React.createElement(VisualProvider, null, children)
+    React.createElement(VisualProvider, { children }, null)
   );
 };
