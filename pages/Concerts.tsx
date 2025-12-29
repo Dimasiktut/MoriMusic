@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore, useVisuals } from '../services/store';
 import { Room, RoomMessage, Track } from '../types';
-import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause, Search } from '../components/ui/Icons';
+import { Users, Send, X, ArrowLeft, Loader2, Zap, Music, Plus, Image as ImageIcon, Mic, ListMusic, Play, Pause, Search, Clock } from '../components/ui/Icons';
 import AuraEffect from '../components/AuraEffect';
 import { supabase } from '../services/supabase';
 
@@ -25,6 +25,7 @@ const Rooms: React.FC = () => {
   const [consoleTracks, setConsoleTracks] = useState<Track[]>([]);
   const [globalSearchQuery, setGlobalSearchQuery] = useState('');
   const [isMicOn, setIsMicOn] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Refs for audio handling
   const chatRef = useRef<HTMLDivElement>(null);
@@ -54,20 +55,18 @@ const Rooms: React.FC = () => {
            if (!prev) return null;
            const newRoom = { ...prev, ...updates };
            
-           // Sync Playback for listeners
+           // Sync Playback for listeners in real-time
            if (roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
              if (updates.currentTrack) {
                roomAudioRef.current.src = updates.currentTrack.audioUrl;
-               // If a new track starts, reset progress
                roomAudioRef.current.currentTime = updates.currentProgress || 0;
              } else if (updates.currentProgress !== undefined) {
-               // Only seek if needed (e.g., if out of sync)
                const diff = Math.abs(roomAudioRef.current.currentTime - updates.currentProgress);
-               if (diff > 2) roomAudioRef.current.currentTime = updates.currentProgress;
+               if (diff > 3) roomAudioRef.current.currentTime = updates.currentProgress;
              }
 
              if (updates.isPlaying === true) {
-               roomAudioRef.current.play().catch(() => console.log("Blocked by browser policy"));
+               roomAudioRef.current.play().catch(() => console.log("Interaction required"));
              } else if (updates.isPlaying === false) {
                roomAudioRef.current.pause();
              }
@@ -93,23 +92,29 @@ const Rooms: React.FC = () => {
     };
   }, [activeRoom?.id, currentUser?.id, setActiveRoom, t]);
 
-  // 2. Initial Sync on join
+  // 2. Initial Join Sync & Interaction Handler
+  const syncPlayback = () => {
+      if (!activeRoom?.currentTrack || !roomAudioRef.current) return;
+      setIsSyncing(true);
+      roomAudioRef.current.src = activeRoom.currentTrack.audioUrl;
+      roomAudioRef.current.currentTime = activeRoom.currentProgress || 0;
+      if (activeRoom.isPlaying) {
+          roomAudioRef.current.play().then(() => setIsSyncing(false)).catch(e => {
+              console.error(e);
+              setIsSyncing(false);
+          });
+      } else {
+          setIsSyncing(false);
+      }
+  };
+
   useEffect(() => {
-      if (activeRoom?.currentTrack && roomAudioRef.current && currentUser?.id !== activeRoom.djId) {
-          roomAudioRef.current.src = activeRoom.currentTrack.audioUrl;
-          if (activeRoom.currentProgress) {
-              roomAudioRef.current.currentTime = activeRoom.currentProgress;
-          }
-          if (activeRoom.isPlaying) {
-            roomAudioRef.current.play().catch(() => {
-                // Browsers often block autoplay on join without interaction
-                console.warn("Autoplay blocked. User needs to interact with the page first.");
-            });
-          }
+      if (activeRoom && currentUser?.id !== activeRoom.djId) {
+          syncPlayback();
       }
   }, [activeRoom?.id, currentUser?.id]);
 
-  // Sync progress occasionally if DJ (broadcasting current time)
+  // DJ Periodic Sync Update
   useEffect(() => {
     if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
     
@@ -117,7 +122,7 @@ const Rooms: React.FC = () => {
       if (roomAudioRef.current && activeRoom.isPlaying) {
         updateRoomState(activeRoom.id, { currentProgress: roomAudioRef.current.currentTime });
       }
-    }, 5000); // sync every 5 seconds
+    }, 8000); 
     
     return () => clearInterval(interval);
   }, [activeRoom?.id, activeRoom?.isPlaying, currentUser?.id, updateRoomState]);
@@ -137,15 +142,6 @@ const Rooms: React.FC = () => {
   const displayTracks = globalSearchQuery ? filteredGlobalTracks : consoleTracks;
 
   // 4. Mic Capture
-  useEffect(() => {
-      if (isMicOn && activeRoom && currentUser?.id === activeRoom.djId) {
-          startMicBroadcast();
-      } else {
-          stopMicBroadcast();
-      }
-      return () => stopMicBroadcast();
-  }, [isMicOn, activeRoom?.id, currentUser?.id]);
-
   const startMicBroadcast = async () => {
       try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -180,6 +176,15 @@ const Rooms: React.FC = () => {
           mediaRecorderRef.current = null;
       }
   };
+
+  useEffect(() => {
+      if (isMicOn && activeRoom && currentUser?.id === activeRoom.djId) {
+          startMicBroadcast();
+      } else {
+          stopMicBroadcast();
+      }
+      return () => stopMicBroadcast();
+  }, [isMicOn, activeRoom?.id, currentUser?.id]);
 
   const playNextMicChunk = async () => {
       if (isPlayingMicRef.current || micQueueRef.current.length === 0) return;
@@ -253,12 +258,9 @@ const Rooms: React.FC = () => {
 
   const playInRoom = (track: Track) => {
       if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
-      
-      // Update local DJ audio
       roomAudioRef.current.src = track.audioUrl;
       roomAudioRef.current.currentTime = 0;
       roomAudioRef.current.play();
-      
       updateRoomState(activeRoom.id, { currentTrack: track, isPlaying: true, currentProgress: 0 });
       if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.notificationOccurred('success');
   };
@@ -266,20 +268,14 @@ const Rooms: React.FC = () => {
   const togglePlayback = () => {
       if (!activeRoom || currentUser?.id !== activeRoom.djId || !roomAudioRef.current) return;
       const newState = !activeRoom.isPlaying;
-      
-      if (newState) {
-        roomAudioRef.current.play();
-      } else {
-        roomAudioRef.current.pause();
-      }
-      
+      if (newState) roomAudioRef.current.play();
+      else roomAudioRef.current.pause();
       updateRoomState(activeRoom.id, { isPlaying: newState, currentProgress: roomAudioRef.current.currentTime });
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!inputText.trim() || !currentUser || !activeRoom) return;
-      
       const newMessage: RoomMessage = {
           id: Date.now().toString(),
           userId: currentUser.id,
@@ -288,7 +284,6 @@ const Rooms: React.FC = () => {
           type: 'text',
           createdAt: new Date().toISOString()
       };
-      
       setMessages(prev => [...prev, newMessage]);
       await sendRoomMessage(activeRoom.id, newMessage);
       setInputText('');
@@ -372,7 +367,6 @@ const Rooms: React.FC = () => {
 
   return (
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
-          {/* Audio element moved inside the room to maintain scope */}
           <audio ref={roomAudioRef} className="hidden" crossOrigin="anonymous" />
           
           <div className="absolute top-0 left-0 right-0 z-20 p-5 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent">
@@ -410,8 +404,20 @@ const Rooms: React.FC = () => {
                             </div>
                        </div>
                    </div>
-                   <div className={`w-12 h-12 rounded-full flex items-center justify-center text-black transition-all ${activeRoom.isMicActive ? 'bg-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'bg-sky-500'}`}>
-                       {activeRoom.isMicActive ? <Mic size={24} fill="currentColor" /> : <Zap size={24} fill="currentColor" />}
+                   
+                   <div className="flex flex-col items-center gap-4">
+                       {!isDJ && (
+                           <button 
+                             onClick={syncPlayback}
+                             className={`p-3 bg-white/10 backdrop-blur-md rounded-2xl text-white border border-white/10 active:scale-95 transition-all flex items-center gap-2 ${isSyncing ? 'animate-pulse' : ''}`}
+                           >
+                               {isSyncing ? <Loader2 size={20} className="animate-spin" /> : <Clock size={20} />}
+                               <span className="text-[10px] font-black uppercase">Sync</span>
+                           </button>
+                       )}
+                       <div className={`w-12 h-12 rounded-full flex items-center justify-center text-black transition-all ${activeRoom.isMicActive ? 'bg-red-500 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.5)]' : 'bg-sky-500'}`}>
+                           {activeRoom.isMicActive ? <Mic size={24} fill="currentColor" /> : <Zap size={24} fill="currentColor" />}
+                       </div>
                    </div>
                </div>
           </div>
@@ -463,7 +469,6 @@ const Rooms: React.FC = () => {
                             </button>
                         </div>
 
-                        {/* Player Controls for DJ */}
                         <div className="bg-zinc-900 border border-white/5 rounded-3xl p-6">
                             <h3 className="text-white font-black uppercase italic tracking-tighter text-lg mb-4 flex items-center gap-2"><Zap size={18} fill="currentColor"/> Controls</h3>
                             <div className="flex items-center gap-4">
@@ -479,8 +484,6 @@ const Rooms: React.FC = () => {
 
                         <div className="space-y-4">
                             <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-[0.2em] flex items-center gap-2"><ListMusic size={14}/> Radio Library</h3>
-                            
-                            {/* Global Search */}
                             <div className="relative">
                                 <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
                                 <input 

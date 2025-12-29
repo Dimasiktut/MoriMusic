@@ -47,7 +47,7 @@ const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => 
 };
 
 const MinimizedRoom: React.FC = () => {
-    const { activeRoom, setRoomMinimized, deleteRoom, currentUser, t } = useStore();
+    const { activeRoom, setRoomMinimized, deleteRoom, currentUser, t, setActiveRoom } = useStore();
     if (!activeRoom) return null;
 
     const isDJ = currentUser?.id === activeRoom.djId;
@@ -75,21 +75,24 @@ const MinimizedRoom: React.FC = () => {
                 <div className="w-8 h-8 rounded-full bg-sky-500/10 flex items-center justify-center text-sky-400">
                     <Zap size={16} fill="currentColor" />
                 </div>
-                {isDJ && (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); deleteRoom(activeRoom.id); }}
-                      className="p-2 text-zinc-600 hover:text-red-500 transition-colors"
-                    >
-                        <X size={20} />
-                    </button>
-                )}
+                <button 
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    if (isDJ) deleteRoom(activeRoom.id);
+                    else setActiveRoom(null);
+                  }}
+                  className="p-2 text-zinc-600 hover:text-red-500 transition-colors"
+                >
+                    <X size={20} />
+                </button>
             </div>
         </div>
     );
 };
 
 const MainLayout: React.FC = () => {
-  const { tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t, setRoomMinimized } = useStore(); 
+  // Fix: Added currentUser to the destructuring of useStore hook values.
+  const { currentUser, tracks, activeRoom, isRoomMinimized, isLoading: storeLoading, t, setRoomMinimized, setActiveRoom } = useStore(); 
   const [activeTab, setActiveTab] = useState<TabView>('feed');
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [overlayView, setOverlayView] = useState<'none' | 'settings' | 'user_profile'>('none');
@@ -97,7 +100,6 @@ const MainLayout: React.FC = () => {
   const [forceLoad, setForceLoad] = useState(false);
   const deepLinkProcessed = useRef(false);
 
-  // Safety timer for loading states
   useEffect(() => {
     const timer = setTimeout(() => {
       setForceLoad(true);
@@ -105,32 +107,44 @@ const MainLayout: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Telegram Back Button Integration
+  // Fixed Back Button Logic
   useEffect(() => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg) return;
 
-    const shouldShowBack = overlayView !== 'none' || (activeRoom && !isRoomMinimized);
+    const shouldShowBack = overlayView !== 'none' || activeRoom !== null;
     
     if (shouldShowBack) {
       tg.BackButton.show();
-      const onBack = () => {
+      const onBackClick = () => {
         if (overlayView !== 'none') {
           setOverlayView('none');
           setViewingUserId(null);
         } else if (activeRoom && !isRoomMinimized) {
+          // If in full-screen room, minimize it first
           setRoomMinimized(true);
+        } else if (activeRoom && isRoomMinimized) {
+          // If minimized, close the room session for listeners
+          if (currentUser?.id !== activeRoom.djId) {
+             setActiveRoom(null);
+          } else {
+             // DJs need to confirm before closing
+             tg.showConfirm(t('track_delete_confirm') || "Close session?", (confirm: boolean) => {
+                 if (confirm) setActiveRoom(null);
+             });
+          }
         }
       };
-      tg.BackButton.onClick(onBack);
+      tg.BackButton.onClick(onBackClick);
       return () => {
-        tg.BackButton.offClick(onBack);
+        tg.BackButton.offClick(onBackClick);
         tg.BackButton.hide();
       };
     } else {
       tg.BackButton.hide();
     }
-  }, [overlayView, activeRoom, isRoomMinimized, setRoomMinimized]);
+    // Added currentUser to dependencies to ensure back button logic reflects current user context.
+  }, [overlayView, activeRoom, isRoomMinimized, setRoomMinimized, setActiveRoom, t, currentUser]);
   
   useEffect(() => {
     if (tracks.length > 0 && !deepLinkProcessed.current) {
@@ -148,12 +162,8 @@ const MainLayout: React.FC = () => {
 
   useEffect(() => {
       if (activeRoom?.currentTrack) {
-          // If a room is active, don't show the standard player if room is visible
-          if (isRoomMinimized) {
-             setCurrentTrack(activeRoom.currentTrack);
-          } else {
-             setCurrentTrack(null);
-          }
+          if (isRoomMinimized) setCurrentTrack(activeRoom.currentTrack);
+          else setCurrentTrack(null);
       }
   }, [activeRoom?.currentTrack, isRoomMinimized]);
 
