@@ -114,19 +114,43 @@ const Rooms: React.FC = () => {
       e.preventDefault();
       if (!newRoomTitle.trim()) return;
       setIsCreating(true);
-      await createRoom({ 
-          title: newRoomTitle, 
-          coverFile: newRoomCover, 
-          trackId: selectedTrackId || undefined 
-      });
-      setIsCreating(false);
-      setShowCreateModal(false);
+      try {
+        await createRoom({ 
+            title: newRoomTitle, 
+            coverFile: newRoomCover, 
+            trackId: selectedTrackId || undefined 
+        });
+        setShowCreateModal(false);
+        setNewRoomTitle('');
+        setNewRoomCover(null);
+        setPreviewCover(null);
+      } catch (err) {
+        console.error("Room creation failed", err);
+      } finally {
+        setIsCreating(false);
+      }
   };
 
   const handleEndSession = async () => {
-      if (activeRoom && isDJ && window.confirm(t('track_delete_confirm'))) {
-          await deleteRoom(activeRoom.id);
-          setActiveRoom(null);
+      if (!activeRoom || !isDJ) return;
+      
+      const tg = (window as any).Telegram?.WebApp;
+      const confirmMsg = t('track_delete_confirm') || "Close session?";
+      
+      if (tg) {
+          tg.showConfirm(confirmMsg, async (confirmed: boolean) => {
+              if (confirmed) {
+                  await deleteRoom(activeRoom.id);
+                  setActiveRoom(null);
+                  setIsMicOn(false);
+              }
+          });
+      } else {
+          if (window.confirm(confirmMsg)) {
+              await deleteRoom(activeRoom.id);
+              setActiveRoom(null);
+              setIsMicOn(false);
+          }
       }
   };
 
