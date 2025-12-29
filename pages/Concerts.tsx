@@ -67,6 +67,7 @@ const Rooms: React.FC = () => {
     };
 
     if (audio.src !== targetSrc) {
+        audio.pause();
         audio.src = targetSrc;
         audio.load();
         audio.oncanplay = () => {
@@ -78,35 +79,39 @@ const Rooms: React.FC = () => {
     }
   }, [activeRoom]);
 
-  // CRITICAL: Purely synchronous handler to unlock audio for Telegram WebApp
+  // CRITICAL: Handlers for unlocking audio must be strictly synchronous
   const handleJoinLive = () => {
     const audio = roomAudioRef.current;
     if (!audio) return;
     
-    setIsJoined(true);
-    
-    // 1. Initialize and resume Voice AudioContext immediately
+    // 1. Immediately resume/create mic audio context in user gesture stack
     if (!micAudioContextRef.current) {
         micAudioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    if (micAudioContextRef.current.state === 'suspended') {
-        micAudioContextRef.current.resume();
-    }
+    micAudioContextRef.current.resume().catch(() => {});
 
-    // 2. Setup radio stream
+    // 2. Set joined state
+    setIsJoined(true);
+    
+    // 3. Start Radio Playback synchronously if track exists
     if (activeRoom?.currentTrack) {
+        // Stop current to prevent interruption error
+        audio.pause();
         audio.src = activeRoom.currentTrack.audioUrl;
         audio.load();
         
-        audio.oncanplay = () => {
+        // Listeners for mobile/webview compatibility
+        const onReadyToRadio = () => {
             audio.currentTime = activeRoom.currentProgress || 0;
             if (activeRoom.isPlaying !== false) {
-                audio.play().catch(e => console.error("Radio play blocked", e));
+                const p = audio.play();
+                if (p !== undefined) p.catch(e => console.warn("Radio sync failed:", e));
             }
-            audio.oncanplay = null;
+            audio.removeEventListener('canplay', onReadyToRadio);
         };
+        audio.addEventListener('canplay', onReadyToRadio);
     } else {
-        // Just unlock the tag if no track yet
+        // If no track yet, just warm up the audio tag
         audio.play().then(() => audio.pause()).catch(() => {});
     }
   };
@@ -130,6 +135,7 @@ const Rooms: React.FC = () => {
         if (roomAudioRef.current && !isDJ && isJoined) {
             const audio = roomAudioRef.current;
             if (updates.currentTrack) {
+                audio.pause();
                 audio.src = updates.currentTrack.audioUrl;
                 audio.load();
                 audio.oncanplay = () => {
@@ -142,8 +148,11 @@ const Rooms: React.FC = () => {
                     const diff = Math.abs(audio.currentTime - updates.currentProgress);
                     if (diff > 4) audio.currentTime = updates.currentProgress;
                 }
-                if (updates.isPlaying === true) audio.play().catch(() => {});
-                else if (updates.isPlaying === false) audio.pause();
+                if (updates.isPlaying === true) {
+                    audio.play().catch(() => {});
+                } else if (updates.isPlaying === false) {
+                    audio.pause();
+                }
             }
         }
 
@@ -282,8 +291,10 @@ const Rooms: React.FC = () => {
 
   const playInRoom = (track: Track) => {
       if (!activeRoom || !isDJ || !roomAudioRef.current) return;
+      roomAudioRef.current.pause();
       roomAudioRef.current.src = track.audioUrl;
       roomAudioRef.current.currentTime = 0;
+      roomAudioRef.current.load();
       roomAudioRef.current.play().catch(() => {});
       updateRoomState(activeRoom.id, { currentTrack: track, isPlaying: true, currentProgress: 0 });
   };
@@ -383,7 +394,14 @@ const Rooms: React.FC = () => {
 
   return (
       <div className="fixed inset-0 z-[60] bg-black flex flex-col animate-in slide-in-from-bottom-full duration-500">
-          <audio ref={roomAudioRef} className="hidden" crossOrigin="anonymous" preload="auto" />
+          <audio 
+            ref={roomAudioRef} 
+            className="hidden" 
+            crossOrigin="anonymous" 
+            preload="auto" 
+            playsInline
+            webkit-playsinline="true"
+          />
           
           {!isJoined && !isDJ && (
               <div className="fixed inset-0 z-[120] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center p-8 text-center animate-in fade-in">
@@ -394,7 +412,10 @@ const Rooms: React.FC = () => {
                   <p className="text-zinc-500 text-sm font-bold uppercase tracking-[0.2em] mb-10 leading-relaxed">
                     Connecting to the broadcast... <br/> Tap to enter
                   </p>
-                  <button onClick={handleJoinLive} className="w-full max-w-xs py-5 bg-white text-black rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3">
+                  <button 
+                    onClick={handleJoinLive} 
+                    className="w-full max-w-xs py-5 bg-white text-black rounded-[2rem] font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all flex items-center justify-center gap-3"
+                  >
                       <Play size={20} fill="currentColor" /> Enter Room
                   </button>
               </div>
