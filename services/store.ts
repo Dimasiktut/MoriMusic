@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Track, User, Comment, Playlist, Room, RoomMessage } from '../types';
+import { Track, User, Playlist, Room, RoomMessage } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
 import { GoogleGenAI } from "@google/genai";
@@ -95,7 +95,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [myPlaylists, setMyPlaylists] = useState<Playlist[]>([]);
-  const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
+  const [savedPlaylists] = useState<Playlist[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [activeRoom, setActiveRoom] = useState<Room | null>(null);
   const [isRoomMinimized, setRoomMinimized] = useState(false);
