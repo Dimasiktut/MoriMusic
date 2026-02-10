@@ -8,7 +8,7 @@ import Upload from './pages/Upload';
 import Profile from './pages/Profile';
 import SettingsPage from './pages/Settings';
 import AudioPlayer from './components/AudioPlayer';
-import { Home, BarChart2, UploadCloud, User, Zap } from './components/ui/Icons';
+import { Home, BarChart2, UploadCloud, User } from './components/ui/Icons';
 
 const Navigation: React.FC<{ activeTab: TabView; onTabChange: (tab: TabView) => void }> = ({ activeTab, onTabChange }) => {
   const { t } = useStore();
@@ -56,7 +56,7 @@ const MainLayout: React.FC = () => {
   useEffect(() => {
     const timer = setTimeout(() => {
       setForceLoad(true);
-    }, 5000); 
+    }, 2500); 
     return () => clearTimeout(timer);
   }, []);
 
@@ -64,15 +64,13 @@ const MainLayout: React.FC = () => {
     const tg = (window as any).Telegram?.WebApp;
     if (!tg) return;
 
-    const shouldShowBack = (overlayView as string) !== 'none';
+    const shouldShowBack = overlayView !== 'none';
     
     if (shouldShowBack) {
       tg.BackButton.show();
       const onBackClick = () => {
-        if ((overlayView as string) !== 'none') {
-          setOverlayView('none');
-          setViewingUserId(null);
-        }
+        setOverlayView('none');
+        setViewingUserId(null);
       };
       tg.BackButton.onClick(onBackClick);
       return () => {
@@ -139,12 +137,37 @@ const MainLayout: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center gap-4 z-[999]">
-        <div className="relative">
-          <div className="w-16 h-16 border-4 border-sky-500/20 border-t-sky-500 rounded-full animate-spin" />
-          <Zap size={24} className="absolute inset-0 m-auto text-sky-400 animate-pulse" fill="currentColor" />
+      <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-[999] overflow-hidden">
+        {/* Neon Glow Sphere */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[250px] h-[250px] bg-sky-500/10 blur-[80px] rounded-full animate-pulse duration-[2s]" />
+        
+        <div className="relative flex flex-col items-center animate-in zoom-in-95 fade-in duration-1000">
+          <div className="flex flex-col items-center">
+            <span className="text-zinc-600 text-[10px] font-black tracking-[0.4em] uppercase mb-2">Studio Presents</span>
+            <div className="flex gap-4 items-center">
+              <h1 className="text-6xl font-black text-white italic tracking-tighter drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">MORI</h1>
+              <h1 className="text-6xl font-black text-sky-400 italic tracking-tighter drop-shadow-[0_0_20px_rgba(56,189,248,0.4)]">MUSIC</h1>
+            </div>
+          </div>
+          
+          <div className="flex gap-1.5 h-8 items-end mt-12 mb-10">
+            <div className="w-1.5 h-4 bg-sky-500 rounded-full animate-music-bar-1" />
+            <div className="w-1.5 h-7 bg-sky-400 rounded-full animate-music-bar-2" />
+            <div className="w-1.5 h-3 bg-sky-600 rounded-full animate-music-bar-3" />
+            <div className="w-1.5 h-5 bg-sky-400 rounded-full animate-music-bar-1" style={{animationDelay: '0.2s'}} />
+            <div className="w-1.5 h-8 bg-sky-500 rounded-full animate-music-bar-2" style={{animationDelay: '0.3s'}} />
+            <div className="w-1.5 h-2 bg-sky-300 rounded-full animate-music-bar-3" style={{animationDelay: '0.1s'}} />
+          </div>
+          
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
+               <div className="h-full bg-sky-500 animate-[loading-bar_2s_ease-in-out_infinite]" style={{ width: '30%' }} />
+            </div>
+            <p className="text-zinc-500 text-[9px] font-black uppercase tracking-[0.6em] ml-[0.6em]">
+              {t('app_initializing')}
+            </p>
+          </div>
         </div>
-        <p className="text-sky-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">{t('app_initializing')}</p>
       </div>
     );
   }

@@ -124,6 +124,9 @@ export const TRANSLATIONS = {
     profile_artist_hub: 'Artist Hub',
     profile_history_empty: 'Empty history',
     profile_playlist_empty: 'No tracks here',
+    profile_follow: 'Follow',
+    profile_following: 'Following',
+    profile_followers: 'Followers',
     
     settings_title: 'Edit Profile',
     settings_language: 'Language',
@@ -269,6 +272,9 @@ export const TRANSLATIONS = {
     profile_artist_hub: 'Хаб артиста',
     profile_history_empty: 'История пуста',
     profile_playlist_empty: 'Здесь пусто',
+    profile_follow: 'Подписаться',
+    profile_following: 'Вы подписаны',
+    profile_followers: 'Подписчики',
     
     settings_title: 'Настройки',
     settings_language: 'Язык',

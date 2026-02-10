@@ -4,7 +4,8 @@ import { useStore } from '../services/store';
 import { 
     Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
     ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, 
-    Zap, TrendingUp, Globe
+    Zap, TrendingUp, Globe, Check, User as UserIcon,
+    Send, ExternalLink
 } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
@@ -19,9 +20,11 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t, toggleFollow, isFollowing } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [isFollowingState, setIsFollowingState] = useState(false);
+  const [isFollowLoading, setIsFollowLoading] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'tracks' | 'likes' | 'history' | 'playlists'>('tracks');
   
@@ -34,10 +37,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
-  const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
-  const [loadingPlaylistTracks, setLoadingPlaylistTracks] = useState(false);
 
-  // Determine if it's the current user's profile
   const isOwnProfile = useMemo(() => {
     if (!targetUserId) return true;
     return currentUser?.id === targetUserId;
@@ -47,23 +47,25 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     let isMounted = true;
     const loadUser = async () => {
         if (!targetUserId || targetUserId === currentUser?.id) {
-            if (isMounted) setProfileUser(currentUser);
+            if (isMounted) {
+              setProfileUser(currentUser);
+              // For own profile, followers/following are handled in fetchUserById normally
+            }
             return;
         }
 
-        // Avoid re-fetching if already loaded
-        if (profileUser?.id === targetUserId) return;
-
         if (isMounted) setLoadingProfile(true);
         const user = await fetchUserById(targetUserId);
+        const followingStatus = await isFollowing(targetUserId);
         if (isMounted) {
             setProfileUser(user);
+            setIsFollowingState(followingStatus);
             setLoadingProfile(false);
         }
     };
     loadUser();
     return () => { isMounted = false; };
-  }, [targetUserId, currentUser?.id, fetchUserById]);
+  }, [targetUserId, currentUser?.id, fetchUserById, isFollowing]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -86,17 +88,23 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
     loadData();
   }, [activeTab, profileUser?.id, getLikedTracks, getUserHistory, fetchUserPlaylists]);
 
-  useEffect(() => {
-      const loadPlaylistTracks = async () => {
-          if (selectedPlaylist) {
-              setLoadingPlaylistTracks(true);
-              const data = await fetchPlaylistTracks(selectedPlaylist.id);
-              setPlaylistTracks(data);
-              setLoadingPlaylistTracks(false);
+  const handleFollow = async () => {
+      if (!profileUser || isFollowLoading) return;
+      setIsFollowLoading(true);
+      await toggleFollow(profileUser.id);
+      setIsFollowingState(!isFollowingState);
+      
+      setProfileUser(prev => prev ? {
+          ...prev,
+          stats: {
+              ...prev.stats,
+              followers: (prev.stats.followers || 0) + (isFollowingState ? -1 : 1)
           }
-      };
-      loadPlaylistTracks();
-  }, [selectedPlaylist?.id, fetchPlaylistTracks]);
+      } : null);
+      
+      if ((window as any).Telegram?.WebApp) (window as any).Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+      setIsFollowLoading(false);
+  };
 
   const handleCreatePlaylist = async () => {
       if (!newPlaylistTitle.trim()) return;
@@ -140,46 +148,8 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const userTracks = tracks.filter(t => t.uploaderId === profileUser.id);
   const currentVibe = getProfileVibe();
 
-  if (selectedPlaylist) {
-      const isSaved = savedPlaylists.some(p => p.id === selectedPlaylist.id);
-      const isOwner = currentUser?.id === selectedPlaylist.userId;
-      return (
-          <div className="pb-32 min-h-screen bg-black animate-in slide-in-from-right-4 duration-500">
-              <div className="relative h-60 bg-zinc-900">
-                  {selectedPlaylist.coverUrl && (
-                      <div className="absolute inset-0">
-                          <img src={selectedPlaylist.coverUrl} className="w-full h-full object-cover opacity-40 blur-xl" alt="" />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
-                      </div>
-                  )}
-                  <div className="absolute top-6 left-5 z-20">
-                      <button onClick={() => setSelectedPlaylist(null)} className="p-3 bg-black/40 rounded-full text-white backdrop-blur-md border border-white/10">
-                          <ArrowLeft size={24} />
-                      </button>
-                  </div>
-                  {!isOwner && currentUser && (
-                       <div className="absolute top-6 right-5 z-20">
-                           <button onClick={() => toggleSavePlaylist(selectedPlaylist.id)} className={`p-3 rounded-full backdrop-blur-md border border-white/10 transition-all ${isSaved ? 'bg-sky-500 text-black border-sky-500' : 'bg-black/40 text-white'}`}>
-                               <Bookmark size={24} fill={isSaved ? "currentColor" : "none"} />
-                           </button>
-                       </div>
-                  )}
-                  <div className="absolute bottom-8 left-6 right-6 flex items-end gap-6 z-10">
-                      <div className="w-32 h-32 rounded-3xl bg-zinc-800 shadow-2xl flex-shrink-0 overflow-hidden border border-white/10">
-                          {selectedPlaylist.coverUrl ? <img src={selectedPlaylist.coverUrl} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-zinc-600"><ListMusic size={40} /></div>}
-                      </div>
-                      <div className="mb-2">
-                          <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter leading-tight">{selectedPlaylist.title}</h2>
-                          <p className="text-xs font-bold text-sky-400 uppercase tracking-widest mt-1">{t('profile_playlists').slice(0, -1)}</p>
-                      </div>
-                  </div>
-              </div>
-              <div className="p-5 space-y-4">
-                  {loadingPlaylistTracks ? <TrackSkeleton /> : playlistTracks.length > 0 ? playlistTracks.map(track => <TrackCard key={track.id} track={track} onPlay={onPlayTrack} />) : <div className="text-center py-20 text-zinc-600 font-bold uppercase text-xs border border-dashed border-white/5 rounded-3xl">{t('profile_playlist_empty')}</div>}
-              </div>
-          </div>
-      );
-  }
+  const socialLinks = profileUser.links || {};
+  const hasSocials = Object.values(socialLinks).some(link => !!link);
 
   return (
     <div className="pb-32 animate-in slide-in-from-bottom-4 duration-500 relative">
@@ -219,49 +189,58 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
            
            <p className="text-center text-zinc-400 text-sm mt-3 font-bold max-w-xs">{profileUser.bio || (isOwnProfile ? t('profile_bio_placeholder') : t('profile_no_bio'))}</p>
 
-           {/* Social Links Block */}
-           <div className="flex items-center justify-center gap-3 mt-5">
-                {profileUser.links?.telegram && (
-                    <a href={profileUser.links.telegram.startsWith('http') ? profileUser.links.telegram : `https://t.me/${profileUser.links.telegram.replace('@','')}`} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-sky-500/10 rounded-2xl border border-sky-500/20 text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
-                        <Zap size={18} fill="currentColor" />
-                    </a>
-                )}
-                {profileUser.links?.spotify && (
-                    <a href={profileUser.links.spotify} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-black transition-all">
-                        <Music size={18} />
-                    </a>
-                )}
-                {profileUser.links?.yandex && (
-                    <a href={profileUser.links.yandex} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-black transition-all">
-                        <Zap size={18} fill="currentColor" />
-                    </a>
-                )}
-                {profileUser.links?.soundcloud && (
-                    <a href={profileUser.links.soundcloud} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-orange-500/10 rounded-2xl border border-orange-500/20 text-orange-400 hover:bg-orange-500 hover:text-black transition-all">
-                        <Headphones size={18} />
-                    </a>
-                )}
-                {profileUser.links?.other && (
-                    <a href={profileUser.links.other} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-zinc-500/10 rounded-2xl border border-zinc-500/20 text-zinc-400 hover:bg-zinc-500 hover:text-black transition-all">
-                        <Globe size={18} />
-                    </a>
-                )}
-           </div>
-
-           {profileUser.stats.uploads > 0 && (
-               <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2rem] p-6 shadow-inner relative overflow-hidden">
-                   <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">
-                       <TrendingUp size={14} /> {t('profile_artist_hub')}
-                   </div>
-                   <div className="flex justify-between items-center text-center relative z-10">
-                        <div><div className="text-2xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_plays')}</div></div>
-                        <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_likes')}</div></div>
-                        <div className="h-8 w-px bg-white/5"></div>
-                        <div><div className="text-2xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[8px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_tracks')}</div></div>
-                   </div>
-               </div>
+           {/* Social Links Row */}
+           {hasSocials && (
+             <div className="flex gap-3 mt-6">
+               {socialLinks.telegram && (
+                 <a href={socialLinks.telegram.startsWith('http') ? socialLinks.telegram : `https://t.me/${socialLinks.telegram.replace('@', '')}`} target="_blank" className="p-3 bg-sky-500/10 border border-sky-500/20 rounded-full text-sky-400 hover:bg-sky-500 hover:text-black transition-all">
+                   <Send size={18} />
+                 </a>
+               )}
+               {socialLinks.spotify && (
+                 <a href={socialLinks.spotify} target="_blank" className="p-3 bg-green-500/10 border border-green-500/20 rounded-full text-green-400 hover:bg-green-500 hover:text-black transition-all">
+                   <Music size={18} />
+                 </a>
+               )}
+               {socialLinks.soundcloud && (
+                 <a href={socialLinks.soundcloud} target="_blank" className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-full text-orange-400 hover:bg-orange-500 hover:text-black transition-all">
+                   <Headphones size={18} />
+                 </a>
+               )}
+               {socialLinks.yandex && (
+                 <a href={socialLinks.yandex} target="_blank" className="p-3 bg-red-500/10 border border-red-500/20 rounded-full text-red-400 hover:bg-red-500 hover:text-black transition-all">
+                   <Zap size={18} />
+                 </a>
+               )}
+               {socialLinks.other && (
+                 <a href={socialLinks.other.startsWith('http') ? socialLinks.other : `https://${socialLinks.other}`} target="_blank" className="p-3 bg-zinc-800 border border-white/5 rounded-full text-zinc-400 hover:text-white transition-all">
+                   <Globe size={18} />
+                 </a>
+               )}
+             </div>
            )}
+
+           {!isOwnProfile && (
+               <button 
+                  onClick={handleFollow}
+                  disabled={isFollowLoading}
+                  className={`mt-6 px-10 py-3 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all flex items-center gap-2 ${isFollowingState ? 'bg-zinc-800 text-zinc-400 border border-white/10' : 'bg-sky-500 text-black shadow-lg shadow-sky-500/20 active:scale-95'}`}
+               >
+                  {isFollowLoading ? <Loader2 size={16} className="animate-spin" /> : isFollowingState ? <><Check size={16}/> {t('profile_following')}</> : <><UserIcon size={16}/> {t('profile_follow')}</>}
+               </button>
+           )}
+
+           <div className="w-full mt-8 bg-zinc-900/40 border border-sky-500/20 rounded-[2.5rem] p-6 shadow-inner relative overflow-hidden">
+               <div className="flex items-center gap-2 mb-4 text-sky-400 font-black uppercase text-[10px] tracking-[0.2em] relative z-10">
+                   <TrendingUp size={14} /> {t('profile_artist_hub')}
+               </div>
+               <div className="grid grid-cols-4 gap-2 items-center text-center relative z-10">
+                    <div><div className="text-xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_plays')}</div></div>
+                    <div><div className="text-xl font-black text-white italic">{profileUser.stats.followers || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_followers')}</div></div>
+                    <div><div className="text-xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_likes')}</div></div>
+                    <div><div className="text-xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_tracks')}</div></div>
+               </div>
+           </div>
 
            <div className="mt-10 w-full flex border-b border-white/5 overflow-x-auto no-scrollbar">
                 {[

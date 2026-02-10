@@ -45,11 +45,15 @@ interface StoreContextType {
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
   getLikedTracks: (userId: number) => Promise<Track[]>;
   getUserHistory: (userId: number) => Promise<Track[]>;
+  toggleFollow: (targetUserId: number) => Promise<void>;
+  isFollowing: (targetUserId: number) => Promise<boolean>;
 }
 
 interface VisualContextType {
   audioIntensity: number;
   setAudioIntensity: (v: number) => void;
+  audioAnalyser: AnalyserNode | null;
+  setAudioAnalyser: (analyser: AnalyserNode | null) => void;
 }
 
 const StoreContext = createContext<StoreContextType | undefined>(undefined);
@@ -69,14 +73,13 @@ export const useVisuals = () => {
 
 const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [audioIntensity, setAudioIntensity] = useState(0);
-  const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
+  const [audioAnalyser, setAudioAnalyser] = useState<AnalyserNode | null>(null);
+  const value = useMemo(() => ({ audioIntensity, setAudioIntensity, audioAnalyser, setAudioAnalyser }), [audioIntensity, audioAnalyser]);
   return React.createElement(VisualContext.Provider, { value: value }, children);
 };
 
-// Helper to sanitize filenames for Supabase Storage paths
 const getSafeFileName = (originalName: string) => {
     const ext = originalName.split('.').pop();
-    // Keep it simple: timestamp + generic name to avoid ASCII issues
     return `${Date.now()}_file.${ext}`;
 };
 
@@ -173,11 +176,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const [
           { count: uploads }, 
           { data: playsData }, 
-          { count: likesReceived }
+          { count: likesReceived },
+          { count: followers },
+          { count: following }
       ] = await Promise.all([
           supabase.from('tracks').select('id', { count: 'exact', head: true }).eq('uploader_id', userId),
           supabase.from('tracks').select('plays').eq('uploader_id', userId),
-          supabase.from('track_likes').select('track_id, tracks!inner(uploader_id)', { count: 'exact', head: true }).eq('tracks.uploader_id', userId)
+          supabase.from('track_likes').select('track_id, tracks!inner(uploader_id)', { count: 'exact', head: true }).eq('tracks.uploader_id', userId),
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
+          supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', userId)
       ]);
 
       const totalPlays = playsData?.reduce((acc, curr) => acc + (curr.plays || 0), 0) || 0;
@@ -185,14 +192,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return {
           id: userId, username: profile.username, firstName: profile.first_name, lastName: profile.last_name,
           photoUrl: profile.photo_url, headerUrl: profile.header_url, bio: profile.bio, links: profile.links || {},
-          stats: { uploads: uploads || 0, likesReceived: likesReceived || 0, totalPlays: totalPlays }, 
+          stats: { 
+            uploads: uploads || 0, 
+            likesReceived: likesReceived || 0, 
+            totalPlays: totalPlays,
+            followers: followers || 0,
+            following: following || 0
+          }, 
           isVerified: totalPlays > 5000
       };
     } catch (e) { return null; }
   }, []);
 
   const uploadImage = async (file: File, bucket: string, pathPrefix: string): Promise<string> => {
-    // Sanitize the filename to avoid 400 Bad Request with non-ASCII chars
     const safePath = `${pathPrefix}/${getSafeFileName(file.name)}`;
     const { error: uploadError } = await supabase.storage.from(bucket).upload(safePath, file);
     if (uploadError) throw uploadError;
@@ -227,16 +239,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           genre: data.genre,
           audio_url: audioUrl,
           cover_url: coverUrl,
-          duration: Math.round(data.duration), // FIXED: Ensure integer for DB
+          duration: Math.round(data.duration),
           plays: 0
       });
       if (error) throw error;
       await fetchTracks(currentUser.id);
-    } catch (e) {
-        console.error("Upload error", e);
-    } finally {
-        setIsLoading(false);
-    }
+    } catch (e) { console.error("Upload error", e); } finally { setIsLoading(false); }
   };
 
   const toggleLike = async (trackId: string) => {
@@ -248,6 +256,22 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } else {
       await supabase.from('track_likes').insert({ user_id: currentUser.id, track_id: trackId });
     }
+  };
+
+  const toggleFollow = async (targetUserId: number) => {
+    if (!currentUser) return;
+    const following = await isFollowing(targetUserId);
+    if (following) {
+      await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
+    } else {
+      await supabase.from('follows').insert({ follower_id: currentUser.id, following_id: targetUserId });
+    }
+  };
+
+  const isFollowing = async (targetUserId: number): Promise<boolean> => {
+    if (!currentUser) return false;
+    const { data } = await supabase.from('follows').select('*').eq('follower_id', currentUser.id).eq('following_id', targetUserId).maybeSingle();
+    return !!data;
   };
 
   const createPlaylist = async (title: string) => {
@@ -333,9 +357,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         link.click();
         document.body.removeChild(link);
         window.URL.revokeObjectURL(url);
-    } catch (e) {
-        console.error("Download failed", e);
-    }
+    } catch (e) { console.error("Download failed", e); }
   };
 
   const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => {
@@ -389,9 +411,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, setLanguage, t,
     uploadTrack, uploadAlbum: async () => {}, generateTrackDescription,
     createPlaylist, addToPlaylist, toggleSavePlaylist, fetchUserPlaylists, fetchPlaylistTracks,
-    deleteTrack, downloadTrack, toggleLike, addComment: async () => {}, recordListen, updateProfile, uploadImage,
-    fetchUserById, getChartTracks, getLikedTracks, getUserHistory
-  }), [currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, t, fetchUserById, generateTrackDescription, toggleLike, recordListen, uploadImage, fetchPlaylistTracks, fetchUserPlaylists, createPlaylist, toggleSavePlaylist, uploadTrack, updateProfile, downloadTrack, getChartTracks, getLikedTracks, getUserHistory]);
+    deleteTrack, downloadTrack, toggleLike, recordListen, updateProfile, uploadImage,
+    fetchUserById, getChartTracks, getLikedTracks, getUserHistory, toggleFollow, isFollowing, addComment: async () => {}
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, t, fetchUserById, generateTrackDescription, toggleLike, recordListen, uploadImage, fetchPlaylistTracks, fetchUserPlaylists, createPlaylist, toggleSavePlaylist, uploadTrack, updateProfile, downloadTrack, getChartTracks, getLikedTracks, getUserHistory, isFollowing, toggleFollow]);
 
   return React.createElement(StoreContext.Provider, { value }, React.createElement(VisualProvider, null, children));
 };

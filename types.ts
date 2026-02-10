@@ -18,6 +18,8 @@ export interface User {
     uploads: number;
     likesReceived: number;
     totalPlays: number;
+    followers?: number;
+    following?: number;
   };
   badges?: string[];
   isVerified?: boolean;
