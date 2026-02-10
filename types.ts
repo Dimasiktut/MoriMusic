@@ -61,32 +61,6 @@ export interface Playlist {
   trackCount?: number; 
 }
 
-// Added missing Room interface
-export interface Room {
-  id: string;
-  title: string;
-  djId: number;
-  djName: string;
-  djAvatar?: string;
-  coverUrl?: string;
-  listeners: number;
-  currentTrack?: Track;
-  isPlaying: boolean;
-  currentProgress: number;
-  isMicActive: boolean;
-  createdAt: string;
-}
-
-// Added missing RoomMessage interface
-export interface RoomMessage {
-  id: string;
-  userId: number;
-  username: string;
-  text: string;
-  type: 'text' | 'system' | 'voice';
-  createdAt: string;
-}
-
 export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings';
 
 export type ChartType = 'week' | 'month';

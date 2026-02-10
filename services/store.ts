@@ -1,9 +1,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Track, User, Playlist, Room, RoomMessage } from '../types';
+import { Track, User, Playlist } from '../types';
 import { TRANSLATIONS, Language } from '../constants';
 import { supabase } from './supabase';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 
 interface UploadTrackData {
   title: string;
@@ -45,18 +45,6 @@ interface StoreContextType {
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
   getLikedTracks: (userId: number) => Promise<Track[]>;
   getUserHistory: (userId: number) => Promise<Track[]>;
-  // Room and Discovery properties added below
-  rooms: Room[];
-  activeRoom: Room | null;
-  roomMinimized: boolean;
-  setActiveRoom: (room: Room | null) => void;
-  setRoomMinimized: (minimized: boolean) => void;
-  createRoom: (data: { title: string, coverFile: File | null, trackId?: string }) => Promise<void>;
-  deleteRoom: (roomId: string) => Promise<void>;
-  updateRoomState: (roomId: string, updates: Partial<Room>) => Promise<void>;
-  sendRoomMessage: (roomId: string, message: RoomMessage) => Promise<void>;
-  fetchRoomById: (roomId: string) => Promise<Room | null>;
-  aiMoodSearch: (prompt: string) => Promise<Track[]>;
 }
 
 interface VisualContextType {
@@ -92,11 +80,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [savedPlaylists, setSavedPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const isInitialLoadDone = useRef(false);
-
-  // New Room and Discovery State
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
-  const [roomMinimized, setRoomMinimized] = useState(false);
   
   const [language, setLanguageState] = useState<Language>(() => {
     try {
@@ -174,143 +157,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setTracks(mapTracksData(tracksData || [], userLikes));
     } catch (e) { console.error("Tracks fetch error", e); }
   }, [mapTracksData]);
-
-  // Rooms Fetch Implementation
-  const fetchRooms = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('rooms')
-        .select('*, profiles:dj_id(username, photo_url)')
-        .eq('is_active', true);
-
-      if (!error && data) {
-        setRooms(data.map(r => ({
-          id: r.id,
-          title: r.title,
-          djId: r.dj_id,
-          djName: r.profiles?.username || 'Mori DJ',
-          djAvatar: r.profiles?.photo_url,
-          coverUrl: r.cover_url,
-          listeners: r.listener_count || 0,
-          currentTrack: r.current_track_id ? tracks.find(t => t.id === r.current_track_id) : undefined,
-          isPlaying: r.is_playing || false,
-          currentProgress: r.current_progress || 0,
-          isMicActive: r.is_mic_active || false,
-          createdAt: r.created_at
-        })));
-      }
-    } catch (e) { console.error("Rooms fetch error", e); }
-  }, [tracks]);
-
-  const fetchRoomById = useCallback(async (roomId: string): Promise<Room | null> => {
-    try {
-      const { data: r, error } = await supabase
-        .from('rooms')
-        .select('*, profiles:dj_id(username, photo_url)')
-        .eq('id', roomId)
-        .maybeSingle();
-      
-      if (error || !r) return null;
-      return {
-          id: r.id,
-          title: r.title,
-          djId: r.dj_id,
-          djName: r.profiles?.username || 'Mori DJ',
-          djAvatar: r.profiles?.photo_url,
-          coverUrl: r.cover_url,
-          listeners: r.listener_count || 0,
-          currentTrack: r.current_track_id ? tracks.find(t => t.id === r.current_track_id) : undefined,
-          isPlaying: r.is_playing || false,
-          currentProgress: r.current_progress || 0,
-          isMicActive: r.is_mic_active || false,
-          createdAt: r.created_at
-      };
-    } catch (e) { return null; }
-  }, [tracks]);
-
-  const createRoom = async (data: { title: string, coverFile: File | null, trackId?: string }) => {
-    if (!currentUser) return;
-    try {
-      let coverUrl = '';
-      if (data.coverFile) {
-        const path = `room_covers/${currentUser.id}/${Date.now()}`;
-        coverUrl = await uploadImage(data.coverFile, 'music', path);
-      }
-      const { data: room, error } = await supabase.from('rooms').insert({
-        title: data.title,
-        dj_id: currentUser.id,
-        cover_url: coverUrl,
-        current_track_id: data.trackId,
-        is_active: true
-      }).select().single();
-      if (!error && room) await fetchRooms();
-    } catch (e) { console.error("Room creation error", e); }
-  };
-
-  const deleteRoom = async (roomId: string) => {
-    try {
-      await supabase.from('rooms').update({ is_active: false }).eq('id', roomId);
-      await fetchRooms();
-    } catch (e) { console.error("Room deletion error", e); }
-  };
-
-  const updateRoomState = async (roomId: string, updates: Partial<Room>) => {
-    try {
-      const dbUpdates: any = {};
-      if (updates.isPlaying !== undefined) dbUpdates.is_playing = updates.isPlaying;
-      if (updates.currentTrack !== undefined) dbUpdates.current_track_id = updates.currentTrack.id;
-      if (updates.currentProgress !== undefined) dbUpdates.current_progress = updates.currentProgress;
-      if (updates.isMicActive !== undefined) dbUpdates.is_mic_active = updates.isMicActive;
-      
-      await supabase.from('rooms').update(dbUpdates).eq('id', roomId);
-    } catch (e) { console.error("Room update error", e); }
-  };
-
-  const sendRoomMessage = async (roomId: string, message: RoomMessage) => {
-    try {
-      await supabase.channel(`room_chat:${roomId}`).send({
-        type: 'broadcast',
-        event: 'message',
-        payload: message
-      });
-    } catch (e) { console.error("Message broadcast error", e); }
-  };
-
-  // AI Discovery Implementation using Gemini
-  const aiMoodSearch = useCallback(async (prompt: string): Promise<Track[]> => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      // Context for AI: limited to a subset of tracks to remain within context windows
-      const tracksContext = tracks.map(t => ({ 
-          id: t.id, 
-          title: t.title, 
-          genre: t.genre, 
-          description: t.description || '' 
-      })).slice(0, 40);
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `User wants music for this mood/prompt: "${prompt}".
-        Here are the available tracks in the library: ${JSON.stringify(tracksContext)}.
-        Analyze which tracks best fit the mood. 
-        Return a JSON array of track IDs. Max 6 tracks.`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING }
-          }
-        }
-      });
-
-      const jsonStr = response.text.trim();
-      const matchedIds: string[] = JSON.parse(jsonStr);
-      return tracks.filter(t => matchedIds.includes(t.id));
-    } catch (e) {
-      console.error("Discovery AI Error:", e);
-      return [];
-    }
-  }, [tracks]);
 
   const fetchUserById = useCallback(async (userId: number): Promise<User | null> => {
     try {
@@ -483,7 +329,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const getChartTracks = useCallback(async (period: 'week' | 'month'): Promise<Track[]> => {
+  const getChartTracks = useCallback(async (_period: 'week' | 'month'): Promise<Track[]> => {
       return [...tracks].sort((a, b) => (b.likes + b.plays) - (a.likes + a.plays)).slice(0, 10);
   }, [tracks]);
 
@@ -521,7 +367,6 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const tg = (window as any).Telegram?.WebApp;
         const tgUserId = tg?.initDataUnsafe?.user?.id;
         await fetchTracks(tgUserId);
-        await fetchRooms();
         if (tgUserId) {
             const user = await fetchUserById(tgUserId);
             if (user) { setCurrentUser(user); await refreshUserContext(user.id); }
@@ -529,22 +374,15 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setIsLoading(false);
     };
     initApp();
-  }, [fetchTracks, fetchUserById, refreshUserContext, fetchRooms]);
+  }, [fetchTracks, fetchUserById, refreshUserContext]);
 
   const value = useMemo(() => ({
     currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, setLanguage, t,
     uploadTrack, uploadAlbum: async () => {}, generateTrackDescription,
     createPlaylist, addToPlaylist, toggleSavePlaylist, fetchUserPlaylists, fetchPlaylistTracks,
     deleteTrack, downloadTrack, toggleLike, addComment: async () => {}, recordListen, updateProfile, uploadImage,
-    fetchUserById, getChartTracks, getLikedTracks, getUserHistory,
-    // Room and AI properties
-    rooms, activeRoom, roomMinimized, setActiveRoom, setRoomMinimized, createRoom, deleteRoom, updateRoomState, sendRoomMessage, fetchRoomById, aiMoodSearch
-  }), [
-    currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, t, fetchUserById, generateTrackDescription, 
-    toggleLike, recordListen, uploadImage, fetchPlaylistTracks, fetchUserPlaylists, createPlaylist, toggleSavePlaylist, 
-    uploadTrack, updateProfile, downloadTrack, getChartTracks, getLikedTracks, getUserHistory,
-    rooms, activeRoom, roomMinimized, createRoom, deleteRoom, updateRoomState, sendRoomMessage, fetchRoomById, aiMoodSearch
-  ]);
+    fetchUserById, getChartTracks, getLikedTracks, getUserHistory
+  }), [currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, t, fetchUserById, generateTrackDescription, toggleLike, recordListen, uploadImage, fetchPlaylistTracks, fetchUserPlaylists, createPlaylist, toggleSavePlaylist, uploadTrack, updateProfile, downloadTrack, getChartTracks, getLikedTracks, getUserHistory]);
 
   return React.createElement(StoreContext.Provider, { value }, React.createElement(VisualProvider, null, children));
 };
