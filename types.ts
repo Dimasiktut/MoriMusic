@@ -1,5 +1,4 @@
 
-
 export interface User {
   id: number;
   username: string;
@@ -40,7 +39,7 @@ export interface Track {
   uploaderAvatar?: string;
   title: string;
   description?: string;
-  lyrics?: string; // New field for track text
+  lyrics?: string;
   genre: string;
   coverUrl: string;
   audioUrl: string;
@@ -53,31 +52,6 @@ export interface Track {
   isVerifiedUploader?: boolean;
 }
 
-// Added Room interface for concert rooms
-export interface Room {
-  id: string;
-  djId: number;
-  djName: string;
-  djAvatar?: string;
-  title: string;
-  coverUrl?: string;
-  listeners: number;
-  currentTrack?: Track;
-  isPlaying?: boolean;
-  currentProgress?: number;
-  isMicActive?: boolean;
-}
-
-// Added RoomMessage interface for room chats
-export interface RoomMessage {
-  id: string;
-  userId: number;
-  username: string;
-  text: string;
-  type: 'text' | 'system';
-  createdAt: string;
-}
-
 export interface Playlist {
   id: string;
   userId: number;
@@ -85,6 +59,32 @@ export interface Playlist {
   coverUrl?: string;
   createdAt: string;
   trackCount?: number; 
+}
+
+// Added missing Room interface
+export interface Room {
+  id: string;
+  title: string;
+  djId: number;
+  djName: string;
+  djAvatar?: string;
+  coverUrl?: string;
+  listeners: number;
+  currentTrack?: Track;
+  isPlaying: boolean;
+  currentProgress: number;
+  isMicActive: boolean;
+  createdAt: string;
+}
+
+// Added missing RoomMessage interface
+export interface RoomMessage {
+  id: string;
+  userId: number;
+  username: string;
+  text: string;
+  type: 'text' | 'system' | 'voice';
+  createdAt: string;
 }
 
 export type TabView = 'feed' | 'charts' | 'upload' | 'profile' | 'settings';

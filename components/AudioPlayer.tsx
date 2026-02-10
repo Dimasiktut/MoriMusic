@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Track } from '../types';
-import { Play, Pause, X, Music, SkipForward, SkipBack, ListMusic, AlignLeft } from './ui/Icons';
+import { Play, Pause, X, Music, SkipForward, SkipBack, AlignLeft } from './ui/Icons';
 import { useStore, useVisuals } from '../services/store';
 
 interface AudioPlayerProps {
@@ -139,13 +139,15 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
                     >
                         {track.uploaderName}
                     </span>
-                    <button 
-                        onClick={() => setShowLyrics(true)}
-                        className="p-1 bg-white/5 rounded-md text-sky-400 hover:text-white transition-all flex items-center gap-1"
-                    >
-                        <AlignLeft size={10} />
-                        <span className="text-[8px] font-black uppercase tracking-widest">TXT</span>
-                    </button>
+                    {track.lyrics && (
+                      <button 
+                          onClick={() => setShowLyrics(true)}
+                          className="p-1 bg-white/5 rounded-md text-sky-400 hover:text-white transition-all flex items-center gap-1"
+                      >
+                          <AlignLeft size={10} />
+                          <span className="text-[8px] font-black uppercase tracking-widest">TXT</span>
+                      </button>
+                    )}
                   </div>
               </div>
             </div>

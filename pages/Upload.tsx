@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useStore } from '../services/store';
-import { UploadCloud, Image as ImageIcon, Music, Loader2, Layers, Music as MusicIcon, Zap, Type } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Music, Loader2, Layers, Music as MusicIcon, Zap } from 'lucide-react';
 import { GENRES } from '../constants';
 
 interface UploadProps {
@@ -14,7 +14,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [lyrics, setLyrics] = useState(''); // New lyrics state
+  const [lyrics, setLyrics] = useState('');
   const [genre, setGenre] = useState(GENRES[0]);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   
