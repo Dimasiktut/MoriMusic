@@ -5,7 +5,7 @@ import {
     Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
     ListMusic, Plus, Loader2, Mic, Headphones, 
     Zap, TrendingUp, Globe, Check, User as UserIcon,
-    Send
+    Send, X
 } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
@@ -17,10 +17,11 @@ interface ProfileProps {
   onEditProfile: () => void;
   onBack?: () => void; 
   targetUserId?: number | null; 
+  onNavigateToUser?: (userId: number) => void;
 }
 
-const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, createPlaylist, t, toggleFollow, isFollowing } = useStore();
+const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId, onNavigateToUser }) => {
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, createPlaylist, t, toggleFollow, isFollowing, fetchFollowersList, fetchFollowingList } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [isFollowingState, setIsFollowingState] = useState(false);
@@ -37,6 +38,9 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
 
+  const [followsModal, setFollowsModal] = useState<{ open: boolean, type: 'followers' | 'following', users: User[] }>({ open: false, type: 'followers', users: [] });
+  const [loadingFollows, setLoadingFollows] = useState(false);
+
   const isOwnProfile = useMemo(() => {
     if (!targetUserId) return true;
     return currentUser?.id === targetUserId;
@@ -45,16 +49,13 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   useEffect(() => {
     let isMounted = true;
     const loadUser = async () => {
-        if (!targetUserId || targetUserId === currentUser?.id) {
-            if (isMounted) {
-              setProfileUser(currentUser);
-            }
-            return;
-        }
+        const id = targetUserId || currentUser?.id;
+        if (!id) return;
 
         if (isMounted) setLoadingProfile(true);
-        const user = await fetchUserById(targetUserId);
-        const followingStatus = await isFollowing(targetUserId);
+        const user = await fetchUserById(id);
+        const followingStatus = id !== currentUser?.id ? await isFollowing(id) : false;
+        
         if (isMounted) {
             setProfileUser(user);
             setIsFollowingState(followingStatus);
@@ -104,6 +105,15 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
       setIsFollowLoading(false);
   };
 
+  const openFollows = async (type: 'followers' | 'following') => {
+      if (!profileUser) return;
+      setLoadingFollows(true);
+      setFollowsModal({ open: true, type, users: [] });
+      const users = type === 'followers' ? await fetchFollowersList(profileUser.id) : await fetchFollowingList(profileUser.id);
+      setFollowsModal({ open: true, type, users });
+      setLoadingFollows(false);
+  };
+
   const handleCreatePlaylist = async () => {
       if (!newPlaylistTitle.trim()) return;
       setCreatingPlaylist(true);
@@ -151,6 +161,40 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
 
   return (
     <div className="pb-32 animate-in slide-in-from-bottom-4 duration-500 relative">
+       {/* Follows Modal */}
+       {followsModal.open && (
+           <div className="fixed inset-0 z-[110] bg-black/95 backdrop-blur-xl flex flex-col p-6 animate-in fade-in duration-300">
+               <div className="flex justify-between items-center mb-8 pt-safe">
+                   <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">
+                       {followsModal.type === 'followers' ? t('profile_followers') : t('profile_following')}
+                   </h3>
+                   <button onClick={() => setFollowsModal({ ...followsModal, open: false })} className="p-3 bg-white/5 rounded-full text-white border border-white/10">
+                       <X size={24} />
+                   </button>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar">
+                   {loadingFollows ? (
+                       <div className="flex justify-center py-20"><Loader2 className="animate-spin text-sky-400" size={32} /></div>
+                   ) : followsModal.users.length > 0 ? (
+                       followsModal.users.map(u => (
+                           <div key={u.id} onClick={() => { setFollowsModal({ ...followsModal, open: false }); onNavigateToUser?.(u.id); }} className="flex items-center gap-4 bg-zinc-900/50 p-3 rounded-2xl border border-white/5 active:bg-zinc-800 transition-all cursor-pointer">
+                               <div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0">
+                                   {u.photoUrl ? <img src={u.photoUrl} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center bg-sky-500 text-black font-black">M</div>}
+                               </div>
+                               <div>
+                                   <div className="text-white font-black text-sm uppercase italic">@{u.username}</div>
+                                   <div className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest">{u.stats.totalPlays} plays</div>
+                               </div>
+                           </div>
+                       ))
+                   ) : (
+                       <div className="text-center py-20 text-zinc-600 font-bold uppercase italic text-xs">No users found</div>
+                   )}
+               </div>
+           </div>
+       )}
+
        {showCreatePlaylist && (
            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
                <div className="bg-zinc-900 border border-white/10 rounded-[2.5rem] w-full max-w-sm p-8 space-y-6 shadow-2xl">
@@ -234,8 +278,17 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                </div>
                <div className="grid grid-cols-4 gap-2 items-center text-center relative z-10">
                     <div><div className="text-xl font-black text-white italic">{(profileUser.stats.totalPlays || 0).toLocaleString()}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_plays')}</div></div>
-                    <div><div className="text-xl font-black text-white italic">{profileUser.stats.followers || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_followers')}</div></div>
-                    <div><div className="text-xl font-black text-white italic">{profileUser.stats.likesReceived || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_likes')}</div></div>
+                    
+                    <div className="cursor-pointer group" onClick={() => openFollows('followers')}>
+                        <div className="text-xl font-black text-white italic group-hover:text-sky-400 transition-colors">{profileUser.stats.followers || 0}</div>
+                        <div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1 group-hover:text-zinc-400 transition-colors">{t('profile_followers')}</div>
+                    </div>
+                    
+                    <div className="cursor-pointer group" onClick={() => openFollows('following')}>
+                        <div className="text-xl font-black text-white italic group-hover:text-sky-400 transition-colors">{profileUser.stats.following || 0}</div>
+                        <div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1 group-hover:text-zinc-400 transition-colors">{t('profile_following')}</div>
+                    </div>
+                    
                     <div><div className="text-xl font-black text-white italic">{profileUser.stats.uploads || 0}</div><div className="text-[7px] font-black uppercase text-zinc-600 tracking-widest mt-1">{t('profile_tracks')}</div></div>
                </div>
            </div>

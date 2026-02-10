@@ -47,6 +47,8 @@ interface StoreContextType {
   getUserHistory: (userId: number) => Promise<Track[]>;
   toggleFollow: (targetUserId: number) => Promise<void>;
   isFollowing: (targetUserId: number) => Promise<boolean>;
+  fetchFollowersList: (userId: number) => Promise<User[]>;
+  fetchFollowingList: (userId: number) => Promise<User[]>;
 }
 
 interface VisualContextType {
@@ -203,6 +205,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
     } catch (e) { return null; }
   }, []);
+
+  const fetchFollowersList = async (userId: number): Promise<User[]> => {
+    const { data } = await supabase.from('follows').select('follower_id, profiles:follower_id(*)').eq('following_id', userId);
+    if (!data) return [];
+    return data.map((d: any) => ({
+      id: d.profiles.id,
+      username: d.profiles.username,
+      photoUrl: d.profiles.photo_url,
+      stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
+      links: d.profiles.links || {}
+    }));
+  };
+
+  const fetchFollowingList = async (userId: number): Promise<User[]> => {
+    const { data } = await supabase.from('follows').select('following_id, profiles:following_id(*)').eq('follower_id', userId);
+    if (!data) return [];
+    return data.map((d: any) => ({
+      id: d.profiles.id,
+      username: d.profiles.username,
+      photoUrl: d.profiles.photo_url,
+      stats: { uploads: 0, likesReceived: 0, totalPlays: 0 },
+      links: d.profiles.links || {}
+    }));
+  };
 
   const uploadImage = async (file: File, bucket: string, pathPrefix: string): Promise<string> => {
     const safePath = `${pathPrefix}/${getSafeFileName(file.name)}`;
@@ -412,7 +438,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     uploadTrack, uploadAlbum: async () => {}, generateTrackDescription,
     createPlaylist, addToPlaylist, toggleSavePlaylist, fetchUserPlaylists, fetchPlaylistTracks,
     deleteTrack, downloadTrack, toggleLike, recordListen, updateProfile, uploadImage,
-    fetchUserById, getChartTracks, getLikedTracks, getUserHistory, toggleFollow, isFollowing, addComment: async () => {}
+    fetchUserById, getChartTracks, getLikedTracks, getUserHistory, toggleFollow, isFollowing, addComment: async () => {},
+    fetchFollowersList, fetchFollowingList
   }), [currentUser, tracks, myPlaylists, savedPlaylists, isLoading, language, t, fetchUserById, generateTrackDescription, toggleLike, recordListen, uploadImage, fetchPlaylistTracks, fetchUserPlaylists, createPlaylist, toggleSavePlaylist, uploadTrack, updateProfile, downloadTrack, getChartTracks, getLikedTracks, getUserHistory, isFollowing, toggleFollow]);
 
   return React.createElement(StoreContext.Provider, { value }, React.createElement(VisualProvider, null, children));

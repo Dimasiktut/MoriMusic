@@ -1,7 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { ArrowLeft, Camera, Save, Loader2, Image as ImageIcon } from '../components/ui/Icons';
+import { 
+    ArrowLeft, Camera, Save, Loader2, Image as ImageIcon, 
+    Send, Music, Headphones, Zap, Globe 
+} from '../components/ui/Icons';
 import { User } from '../types';
 
 interface SettingsProps {
@@ -28,7 +31,13 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
       setFirstName(currentUser.firstName || '');
       setLastName(currentUser.lastName || '');
       setBio(currentUser.bio || '');
-      setLinks({ telegram: currentUser.links?.telegram || '', yandex: currentUser.links?.yandex || '', spotify: currentUser.links?.spotify || '', soundcloud: currentUser.links?.soundcloud || '', other: currentUser.links?.other || '' });
+      setLinks({ 
+        telegram: currentUser.links?.telegram || '', 
+        yandex: currentUser.links?.yandex || '', 
+        spotify: currentUser.links?.spotify || '', 
+        soundcloud: currentUser.links?.soundcloud || '', 
+        other: currentUser.links?.other || '' 
+      });
       setPhotoUrl(currentUser.photoUrl || '');
       setHeaderUrl(currentUser.headerUrl || '');
     }
@@ -88,6 +97,32 @@ const SettingsPage: React.FC<SettingsProps> = ({ onBack }) => {
               <input type="text" value={lastName} onChange={e => setLastName(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none transition-all" placeholder={t('settings_lastname')}/>
             </div>
             <textarea value={bio} onChange={e => setBio(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none h-32 resize-none transition-all" placeholder={t('settings_bio_placeholder')} maxLength={150}/>
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-600">{t('settings_socials')}</h3>
+            <div className="space-y-4">
+                <div className="relative">
+                    <Send size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-sky-400" />
+                    <input type="text" value={links.telegram} onChange={e => setLinks({ ...links, telegram: e.target.value })} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-sky-500/50" placeholder="Telegram URL or @username" />
+                </div>
+                <div className="relative">
+                    <Music size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-400" />
+                    <input type="text" value={links.spotify} onChange={e => setLinks({ ...links, spotify: e.target.value })} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-sky-500/50" placeholder="Spotify Profile Link" />
+                </div>
+                <div className="relative">
+                    <Headphones size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-400" />
+                    <input type="text" value={links.soundcloud} onChange={e => setLinks({ ...links, soundcloud: e.target.value })} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-sky-500/50" placeholder="SoundCloud Profile Link" />
+                </div>
+                <div className="relative">
+                    <Zap size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-400" />
+                    <input type="text" value={links.yandex} onChange={e => setLinks({ ...links, yandex: e.target.value })} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-sky-500/50" placeholder="Yandex Music Link" />
+                </div>
+                <div className="relative">
+                    <Globe size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input type="text" value={links.other} onChange={e => setLinks({ ...links, other: e.target.value })} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold text-white outline-none focus:ring-2 focus:ring-sky-500/50" placeholder={t('settings_other_placeholder')} />
+                </div>
+            </div>
           </div>
 
           <button type="submit" onClick={handleSave} disabled={isSaving} className="w-full bg-sky-500 hover:bg-sky-400 active:scale-95 text-black font-black uppercase tracking-widest py-5 rounded-2xl shadow-xl shadow-sky-500/20 transition-all flex items-center justify-center gap-3">

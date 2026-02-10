@@ -122,13 +122,13 @@ const MainLayout: React.FC = () => {
 
   const renderContent = () => {
       if (overlayView === 'settings') return <SettingsPage onBack={() => setOverlayView('none')} />;
-      if (overlayView === 'user_profile') return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => { }} onBack={() => setOverlayView('none')} targetUserId={viewingUserId} />;
+      if (overlayView === 'user_profile') return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => { }} onBack={() => setOverlayView('none')} targetUserId={viewingUserId} onNavigateToUser={handleOpenProfile} />;
 
       switch (activeTab) {
         case 'feed': return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
         case 'charts': return <Charts onPlayTrack={handlePlayTrack} />;
         case 'upload': return <Upload onUploadSuccess={() => handleTabChange('feed')} />;
-        case 'profile': return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} />;
+        case 'profile': return <Profile onPlayTrack={handlePlayTrack} onEditProfile={() => setOverlayView('settings')} onNavigateToUser={handleOpenProfile} />;
         default: return <Feed onPlayTrack={handlePlayTrack} onOpenProfile={handleOpenProfile} />;
       }
   };
