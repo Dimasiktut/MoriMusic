@@ -227,7 +227,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           genre: data.genre,
           audio_url: audioUrl,
           cover_url: coverUrl,
-          duration: data.duration,
+          duration: Math.round(data.duration), // FIXED: Ensure integer for DB
           plays: 0
       });
       if (error) throw error;
