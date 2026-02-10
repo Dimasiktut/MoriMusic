@@ -3,9 +3,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { 
     Settings, ArrowLeft, BadgeCheck, Heart, Music, Clock, 
-    ListMusic, Plus, Loader2, Bookmark, Mic, Headphones, 
+    ListMusic, Plus, Loader2, Mic, Headphones, 
     Zap, TrendingUp, Globe, Check, User as UserIcon,
-    Send, ExternalLink
+    Send
 } from '../components/ui/Icons';
 import { Track, User, Playlist } from '../types';
 import TrackCard from '../components/TrackCard';
@@ -20,7 +20,7 @@ interface ProfileProps {
 }
 
 const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, targetUserId }) => {
-  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, savedPlaylists, toggleSavePlaylist, fetchPlaylistTracks, createPlaylist, t, toggleFollow, isFollowing } = useStore();
+  const { currentUser, tracks, fetchUserById, getLikedTracks, getUserHistory, fetchUserPlaylists, createPlaylist, t, toggleFollow, isFollowing } = useStore();
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [isFollowingState, setIsFollowingState] = useState(false);
@@ -36,7 +36,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [creatingPlaylist, setCreatingPlaylist] = useState(false);
-  const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
 
   const isOwnProfile = useMemo(() => {
     if (!targetUserId) return true;
@@ -49,7 +48,6 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
         if (!targetUserId || targetUserId === currentUser?.id) {
             if (isMounted) {
               setProfileUser(currentUser);
-              // For own profile, followers/following are handled in fetchUserById normally
             }
             return;
         }
@@ -264,7 +262,7 @@ const Profile: React.FC<ProfileProps> = ({ onPlayTrack, onEditProfile, onBack, t
                         {isOwnProfile && <button onClick={() => setShowCreatePlaylist(true)} className="w-full py-4 bg-zinc-900 border border-white/5 border-dashed rounded-3xl text-zinc-500 font-black uppercase text-[10px] tracking-widest hover:text-white transition-all"><Plus size={18} className="inline mr-2" />{t('profile_create_playlist')}</button>}
                         <div className="grid grid-cols-2 gap-4">
                             {playlists.map(p => (
-                                <div key={p.id} onClick={() => setSelectedPlaylist(p)} className="bg-zinc-900/40 rounded-[2rem] overflow-hidden border border-white/5 p-4 cursor-pointer hover:border-sky-500/30 transition-all">
+                                <div key={p.id} className="bg-zinc-900/40 rounded-[2rem] overflow-hidden border border-white/5 p-4 cursor-pointer hover:border-sky-500/30 transition-all">
                                     <div className="aspect-square bg-zinc-800 rounded-2xl relative mb-3 overflow-hidden">{p.coverUrl ? <img src={p.coverUrl} className="w-full h-full object-cover" alt="" /> : <div className="w-full h-full flex items-center justify-center text-zinc-700"><ListMusic size={32} /></div>}</div>
                                     <h4 className="text-white text-xs font-black uppercase truncate">{p.title}</h4>
                                 </div>
