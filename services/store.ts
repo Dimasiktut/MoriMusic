@@ -40,7 +40,7 @@ interface StoreContextType {
   addComment: (trackId: string, text: string) => Promise<void>;
   recordListen: (trackId: string) => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
-  uploadImage: (file: File, bucket: string, path: string) => Promise<string>;
+  uploadImage: (file: File, bucket: string, pathPrefix: string) => Promise<string>;
   fetchUserById: (userId: number) => Promise<User | null>;
   getChartTracks: (period: 'week' | 'month') => Promise<Track[]>;
   getLikedTracks: (userId: number) => Promise<Track[]>;
@@ -71,6 +71,13 @@ const VisualProvider: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const [audioIntensity, setAudioIntensity] = useState(0);
   const value = useMemo(() => ({ audioIntensity, setAudioIntensity }), [audioIntensity]);
   return React.createElement(VisualContext.Provider, { value: value }, children);
+};
+
+// Helper to sanitize filenames for Supabase Storage paths
+const getSafeFileName = (originalName: string) => {
+    const ext = originalName.split('.').pop();
+    // Keep it simple: timestamp + generic name to avoid ASCII issues
+    return `${Date.now()}_file.${ext}`;
 };
 
 export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -184,10 +191,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (e) { return null; }
   }, []);
 
-  const uploadImage = async (file: File, bucket: string, path: string): Promise<string> => {
-    const { error: uploadError } = await supabase.storage.from(bucket).upload(path, file);
+  const uploadImage = async (file: File, bucket: string, pathPrefix: string): Promise<string> => {
+    // Sanitize the filename to avoid 400 Bad Request with non-ASCII chars
+    const safePath = `${pathPrefix}/${getSafeFileName(file.name)}`;
+    const { error: uploadError } = await supabase.storage.from(bucket).upload(safePath, file);
     if (uploadError) throw uploadError;
-    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+    const { data } = supabase.storage.from(bucket).getPublicUrl(safePath);
     return data.publicUrl;
   };
 
@@ -197,17 +206,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       let audioUrl = data.existingAudioUrl || '';
       if (data.audioFile) {
-          const path = `tracks/${currentUser.id}/${Date.now()}_${data.audioFile.name}`;
-          const { error: uploadError } = await supabase.storage.from('music').upload(path, data.audioFile);
+          const pathPrefix = `tracks/${currentUser.id}`;
+          const safePath = `${pathPrefix}/${getSafeFileName(data.audioFile.name)}`;
+          const { error: uploadError } = await supabase.storage.from('music').upload(safePath, data.audioFile);
           if (uploadError) throw uploadError;
-          const { data: urlData } = supabase.storage.from('music').getPublicUrl(path);
+          const { data: urlData } = supabase.storage.from('music').getPublicUrl(safePath);
           audioUrl = urlData.publicUrl;
       }
 
       let coverUrl = data.existingCoverUrl || '';
       if (data.coverFile) {
-          const path = `covers/${currentUser.id}/${Date.now()}_${data.coverFile.name}`;
-          coverUrl = await uploadImage(data.coverFile, 'music', path);
+          coverUrl = await uploadImage(data.coverFile, 'music', `covers/${currentUser.id}`);
       }
 
       const { error } = await supabase.from('tracks').insert({
