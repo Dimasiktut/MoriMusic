@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import { useStore } from '../services/store';
-import { UploadCloud, Image as ImageIcon, Music, Loader2, Layers, Music as MusicIcon, Zap } from 'lucide-react';
+import { UploadCloud, Image as ImageIcon, Music, Loader2, Layers, Music as MusicIcon, Zap, Type } from 'lucide-react';
 import { GENRES } from '../constants';
 
 interface UploadProps {
@@ -14,6 +14,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [lyrics, setLyrics] = useState(''); // New lyrics state
   const [genre, setGenre] = useState(GENRES[0]);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   
@@ -64,7 +65,7 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
     e.preventDefault();
     if (mode === 'single') {
         if (!audioFile || !title) return;
-        await uploadTrack({ title, description, genre, audioFile, coverFile, duration: duration || 180 });
+        await uploadTrack({ title, description, lyrics, genre, audioFile, coverFile, duration: duration || 180 });
     } else {
         if (albumFiles.length === 0 || !title) return;
         await uploadAlbum(albumFiles, { title, description, genre, coverFile });
@@ -173,7 +174,12 @@ const Upload: React.FC<UploadProps> = ({ onUploadSuccess }) => {
                         {t('upload_magic_ai')}
                       </button>
                   </div>
-                  <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none h-32 resize-none transition-all" placeholder={t('upload_placeholder_desc')}/>
+                  <textarea value={description} onChange={(e) => setDescription(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none h-24 resize-none transition-all" placeholder={t('upload_placeholder_desc')}/>
+              </div>
+
+              <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">{t('upload_label_lyrics')}</label>
+                  <textarea value={lyrics} onChange={(e) => setLyrics(e.target.value)} className="w-full bg-zinc-900/50 border border-white/5 rounded-2xl p-4 text-sm font-bold text-white focus:ring-2 focus:ring-sky-500/50 outline-none h-48 resize-none transition-all" placeholder={t('upload_placeholder_lyrics')}/>
               </div>
           </div>
 

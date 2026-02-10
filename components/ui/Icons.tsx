@@ -46,7 +46,10 @@ import {
   Star,
   Calendar,
   Users,
-  Volume2
+  Volume2,
+  Sparkles,
+  // Added missing AlignLeft icon
+  AlignLeft
 } from 'lucide-react';
 
 export {
@@ -96,5 +99,7 @@ export {
   Star,
   Calendar,
   Users,
-  Volume2
+  Volume2,
+  Sparkles,
+  AlignLeft
 };

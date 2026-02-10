@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Track } from '../types';
-import { Play, Pause, X, Music, SkipForward, SkipBack } from './ui/Icons';
+import { Play, Pause, X, Music, SkipForward, SkipBack, ListMusic, AlignLeft } from './ui/Icons';
 import { useStore, useVisuals } from '../services/store';
 
 interface AudioPlayerProps {
@@ -13,12 +13,13 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile, onNext, onPrev }) => {
-  const { recordListen } = useStore();
+  const { recordListen, t } = useStore();
   const { setAudioIntensity } = useVisuals();
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hasCountedListen, setHasCountedListen] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
   const animationFrameRef = useRef<number>(0);
 
   useEffect(() => {
@@ -26,9 +27,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
       audioRef.current.src = track.audioUrl;
       audioRef.current.play().then(() => setIsPlaying(true)).catch(e => console.error("Playback failed", e));
       setHasCountedListen(false);
+      setShowLyrics(false);
     } else {
         setIsPlaying(false);
         setAudioIntensity(0);
+        setShowLyrics(false);
     }
   }, [track, setAudioIntensity]);
 
@@ -78,78 +81,113 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ track, onClose, onOpenProfile
   if (!track) return null;
 
   return (
-    <div className="fixed bottom-[90px] left-0 right-0 px-5 pb-2 z-40 animate-in slide-in-from-bottom-10 duration-500">
-      <div className="glass border border-white/10 rounded-[2.5rem] p-4 shadow-2xl flex flex-col gap-3 relative overflow-hidden">
-        <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden cursor-pointer relative z-10" 
-             onClick={(e) => {
-                if(!audioRef.current) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                audioRef.current.currentTime = (x / rect.width) * audioRef.current.duration;
-             }}>
-          <div 
-            className="h-full bg-sky-400 transition-all duration-100 ease-linear shadow-[0_0_15px_rgba(56,189,248,0.5)]"
-            style={{ width: `${progress}%` }}
-          />
+    <>
+      {/* Lyrics Overlay */}
+      {showLyrics && (
+        <div className="fixed inset-0 z-[60] bg-black/95 backdrop-blur-3xl animate-in slide-in-from-bottom-full duration-500 flex flex-col p-8 pt-safe">
+            <div className="flex justify-between items-center mb-10">
+                <div className="flex items-center gap-4">
+                    <img src={track.coverUrl} className="w-12 h-12 rounded-xl object-cover" alt="" />
+                    <div>
+                        <h4 className="text-white font-black uppercase italic tracking-tighter truncate max-w-[200px]">{track.title}</h4>
+                        <p className="text-zinc-500 text-[10px] font-bold uppercase">{track.uploaderName}</p>
+                    </div>
+                </div>
+                <button onClick={() => setShowLyrics(false)} className="p-3 bg-white/5 rounded-full text-white border border-white/10">
+                    <X size={24} />
+                </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto no-scrollbar pb-20">
+                <p className="text-white text-2xl font-black uppercase italic leading-loose tracking-tight whitespace-pre-wrap">
+                    {track.lyrics || t('track_no_lyrics')}
+                </p>
+            </div>
         </div>
+      )}
 
-        <div className="flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-4 overflow-hidden flex-1">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex-shrink-0 overflow-hidden shadow-lg">
-                {track.coverUrl ? (
-                    <img src={track.coverUrl} alt="cover" className="w-full h-full object-cover" />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-600"><Music size={20} /></div>
-                )}
-            </div>
-            <div className="flex flex-col overflow-hidden">
-                <span className="text-sm font-black text-white truncate uppercase tracking-tight italic">{track.title}</span>
-                <span 
-                    className="text-xs font-bold text-zinc-500 truncate hover:text-sky-400 cursor-pointer transition-colors"
-                    onClick={() => onOpenProfile && onOpenProfile(track.uploaderId)}
-                >
-                    {track.uploaderName}
-                </span>
-            </div>
+      <div className="fixed bottom-[90px] left-0 right-0 px-5 pb-2 z-40 animate-in slide-in-from-bottom-10 duration-500">
+        <div className="glass border border-white/10 rounded-[2.5rem] p-4 shadow-2xl flex flex-col gap-3 relative overflow-hidden">
+          <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden cursor-pointer relative z-10" 
+               onClick={(e) => {
+                  if(!audioRef.current) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  audioRef.current.currentTime = (x / rect.width) * audioRef.current.duration;
+               }}>
+            <div 
+              className="h-full bg-sky-400 transition-all duration-100 ease-linear shadow-[0_0_15px_rgba(56,189,248,0.5)]"
+              style={{ width: `${progress}%` }}
+            />
           </div>
 
-          <div className="flex items-center gap-4">
-             <div className="hidden xs:flex items-end gap-1 h-5 w-8 mr-2">
-                 <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-1' : 'h-[20%]'}`}></div>
-                 <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-2' : 'h-[50%]'}`}></div>
-                 <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-3' : 'h-[30%]'}`}></div>
-             </div>
-             
-             <div className="flex items-center gap-2">
-                <button onClick={onPrev} className="text-zinc-500 hover:text-white p-1 transition-colors">
-                    <SkipBack size={24} fill="currentColor" />
-                </button>
+          <div className="flex items-center justify-between relative z-10">
+            <div className="flex items-center gap-4 overflow-hidden flex-1">
+              <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex-shrink-0 overflow-hidden shadow-lg">
+                  {track.coverUrl ? (
+                      <img src={track.coverUrl} alt="cover" className="w-full h-full object-cover" />
+                  ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-600"><Music size={20} /></div>
+                  )}
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                  <span className="text-sm font-black text-white truncate uppercase tracking-tight italic">{track.title}</span>
+                  <div className="flex items-center gap-2">
+                    <span 
+                        className="text-xs font-bold text-zinc-500 truncate hover:text-sky-400 cursor-pointer transition-colors"
+                        onClick={() => onOpenProfile && onOpenProfile(track.uploaderId)}
+                    >
+                        {track.uploaderName}
+                    </span>
+                    <button 
+                        onClick={() => setShowLyrics(true)}
+                        className="p-1 bg-white/5 rounded-md text-sky-400 hover:text-white transition-all flex items-center gap-1"
+                    >
+                        <AlignLeft size={10} />
+                        <span className="text-[8px] font-black uppercase tracking-widest">TXT</span>
+                    </button>
+                  </div>
+              </div>
+            </div>
 
-                <button 
-                    onClick={togglePlay}
-                    className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-transform"
-                >
-                    {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1"/>}
-                </button>
+            <div className="flex items-center gap-4">
+               <div className="hidden xs:flex items-end gap-1 h-5 w-8 mr-2">
+                   <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-1' : 'h-[20%]'}`}></div>
+                   <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-2' : 'h-[50%]'}`}></div>
+                   <div className={`w-1.5 bg-sky-400 rounded-full shadow-[0_0_10px_rgba(56,189,248,0.5)] ${isPlaying ? 'animate-music-bar-3' : 'h-[30%]'}`}></div>
+               </div>
+               
+               <div className="flex items-center gap-2">
+                  <button onClick={onPrev} className="text-zinc-500 hover:text-white p-1 transition-colors">
+                      <SkipBack size={24} fill="currentColor" />
+                  </button>
 
-                <button onClick={onNext} className="text-zinc-500 hover:text-white p-1 transition-colors">
-                    <SkipForward size={24} fill="currentColor" />
-                </button>
-             </div>
+                  <button 
+                      onClick={togglePlay}
+                      className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-transform"
+                  >
+                      {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-1"/>}
+                  </button>
 
-             <button onClick={onClose} className="text-zinc-600 hover:text-white p-1 ml-2">
-                 <X size={24} />
-             </button>
+                  <button onClick={onNext} className="text-zinc-500 hover:text-white p-1 transition-colors">
+                      <SkipForward size={24} fill="currentColor" />
+                  </button>
+               </div>
+
+               <button onClick={onClose} className="text-zinc-600 hover:text-white p-1 ml-2">
+                   <X size={24} />
+               </button>
+            </div>
           </div>
         </div>
+        
+        <audio 
+          ref={audioRef}
+          onTimeUpdate={handleTimeUpdate}
+          onEnded={onNext}
+        />
       </div>
-      
-      <audio 
-        ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
-        onEnded={onNext}
-      />
-    </div>
+    </>
   );
 };
 
